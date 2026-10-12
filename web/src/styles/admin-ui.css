@@ -4506,6 +4506,64 @@
     text-align: right;
 }
 
+.admin-egress-settings {
+    padding-bottom: 24px;
+}
+
+.admin-egress-settings .admin-settings-section {
+    border: 1px solid var(--admin-card-border);
+}
+
+.admin-egress-settings .admin-settings-section-summary,
+.admin-egress-settings .admin-settings-section-content {
+    background: var(--admin-layer-1);
+}
+
+.admin-egress-command-bar {
+    position: sticky;
+    top: 0;
+    z-index: 24;
+    display: flex;
+    min-height: 62px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    border: 1px solid var(--admin-card-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--admin-layer-1) 96%, transparent);
+    padding: 11px 14px;
+    box-shadow: var(--admin-card-shadow);
+    backdrop-filter: blur(14px);
+    transition:
+        border-color 180ms ease,
+        background-color 180ms ease,
+        box-shadow 180ms ease;
+}
+
+.admin-egress-command-bar.is-dirty {
+    border-color: color-mix(in srgb, var(--admin-status-warning) 34%, var(--admin-card-border));
+    background: color-mix(in srgb, var(--admin-status-warning) 6%, var(--admin-layer-1));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--admin-status-warning) 24%, transparent);
+}
+
+.admin-egress-command-copy,
+.admin-egress-command-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-egress-command-copy {
+    min-width: 0;
+}
+
+.admin-egress-command-copy strong {
+    color: var(--admin-text-primary);
+    font-size: 13px;
+    font-weight: 650;
+}
+
 .admin-intercept-settings {
     padding-bottom: 24px;
 }
