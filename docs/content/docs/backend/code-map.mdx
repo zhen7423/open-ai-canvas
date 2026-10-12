@@ -55,6 +55,7 @@ description: 从产品功能快速定位主要代码入口
 - 规划与策略：`web/src/lib/canvas/canvas-image-layer-plan.ts`、`canvas-image-layer-strategy.ts`；原图、规划请求、提取与合成：`web/src/services/canvas-image-layer-*.ts`。
 - 图层组和素材保存：`web/src/pages/canvas/use-canvas-image-layer-groups.ts`、`use-canvas-image-layer-materials.ts`；任务恢复与复制规则：`web/src/lib/canvas/canvas-generation-task-sync.ts`、`canvas-node-copy.ts`。
 - 看图资源归属及实际像素：`backend/internal/app/provider_media_hydration.go`；透明 PNG 参数：`plugin-packages/image-tools/manifest.json`。
+- 本参图片出站内镜：判定与改写 `backend/internal/app/provider_media_egress.go`（在 `provider.go` 中紧跟 hydration 与 Ark 私有素材之后调用），独立配置 `backend/internal/app/settings_provider_egress.go`（系统设置键 `provider_egress`，与主存储的 `oss` 设置分离），到期回收 `backend/internal/app/provider_egress_cleanup.go`（挂在 `resource_deletion_worker.go` 的既有周期块上），地址公网性判据 `backend/internal/outbound/outbound.go` 的 `IsNonPublicHost` / `IsNonPublicIP`（与 SSRF 拦截共用 `blockedOutboundIP`）。本期只处理视频任务的图片素材：单张与整请求都在内联预算内（`providerEgressMaxInlineImageBytes` / `providerEgressMaxInlineTotalBytes`）的直接 Base64 内联，超预算才镜像到内镜桶；参考视频与参考音频仍要求上游可达地址。
 
 ## 画布核心
 

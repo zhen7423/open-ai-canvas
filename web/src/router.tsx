@@ -31,6 +31,7 @@ const AppearanceSettingsPage = lazy(() => import("@/pages/admin/settings/appeara
 const DrawingEngineSettingsPage = lazy(() => import("@/pages/admin/settings/drawing-engine-settings-page"));
 const StorageSettingsPage = lazy(() => import("@/pages/admin/settings/storage-settings-page"));
 const ArkPrivateAssetsSettingsPage = lazy(() => import("@/pages/admin/settings/ark-private-assets-settings-page"));
+const ProviderEgressSettingsPage = lazy(() => import("@/pages/admin/settings/provider-egress-settings-page"));
 const ResponseInterceptionSettingsPage = lazy(() => import("@/pages/admin/settings/response-interception-settings-page"));
 const ThirdPartySettingsPage = lazy(() => import("@/pages/admin/settings/libtv-settings-page"));
 const SystemUpdatePage = lazy(() => import("@/pages/admin/settings/system-update-page"));
@@ -213,6 +214,7 @@ export const router = createBrowserRouter([
                     { path: "settings/email", element: <EmailSettingsPage /> },
                     { path: "settings/storage", element: <StorageSettingsPage /> },
                     { path: "settings/ark-private-assets", element: <ArkPrivateAssetsSettingsPage /> },
+                    { path: "settings/provider-egress", element: <ProviderEgressSettingsPage /> },
                     { path: "settings/response-interception", element: <ResponseInterceptionSettingsPage /> },
                     { path: "settings/third-party", element: <ThirdPartySettingsPage /> },
                     { path: "settings/system-update", element: <SystemUpdatePage /> },

@@ -469,10 +469,104 @@ func blockedOutboundIP(ip net.IP) bool {
 	return ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast()
 }
 
-func blockedCustomRelayIP(ip net.IP) bool {
-	if blockedOutboundIP(ip) {
+// isNonPublicIP 与 SSRF 拦截共用同一判据：出站内镜要回答"上游能不能取到我们自己签出的地址"，
+// 复制一份判据迟早会和拦截规则分叉。不导出——包外唯一调用点是同文件的 IsNonPublicHost。
+func isNonPublicIP(ip net.IP) bool { return blockedCustomRelayIP(ip) }
+
+// IsNonPublicHost 不做 DNS 解析：穿隧道后的公网域名解析到公网 IP，按域名形态判定已经足够，
+// 解析反而给每次出图多加一次网络往返。
+//
+// 判不准时一律当作非公网：这个判据下游的取舍是"多做一次镜像"对"把内网地址发给第三方"，
+// 前者只是浪费一次上传，后者会泄露内部主机名与端口。因此这里宁可错杀。
+// 已知判不了的形态：靠 DNS 指到内网的公网域名（如 127.0.0.1.nip.io），本期不覆盖。
+func IsNonPublicHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(host), ".")))
+	host = stripHostPort(host)
+	if host == "" {
 		return true
 	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	if !strings.Contains(host, ".") {
+		return true
+	}
+	if hostLooksLikeAddressLiteral(host) {
+		// 0177.0.0.1、0x7f.0.0.1、127.1 这类 net.ParseIP 会拒绝、但某些解析器仍当 IP 处理的写法。
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return isNonPublicIP(ip)
+	}
+	for _, suffix := range []string{".local", ".internal", ".home.arpa", ".localdomain", ".lan", ".test"} {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripHostPort 剥掉端口。调用方常直接传 url.URL.Host（形如 192.168.1.167:1888），
+// 带着端口既解析不出 IP，也匹配不到后缀规则，会把内网地址误判成公网。
+func stripHostPort(host string) string {
+	if strings.HasPrefix(host, "[") {
+		if end := strings.IndexByte(host, ']'); end > 0 {
+			return host[1:end]
+		}
+		return host
+	}
+	index := strings.LastIndexByte(host, ':')
+	if index <= 0 || strings.Contains(host[:index], ":") {
+		return host
+	}
+	port := host[index+1:]
+	if port == "" || strings.IndexFunc(port, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
+		return host
+	}
+	return host[:index]
+}
+
+// hostLooksLikeAddressLiteral 命中条件：每个点分片段要么全是十进制数字，要么是 0x 开头的十六进制段，且不超过四段。
+// 判据必须收紧到"数字段或显式 0x 段"：只看"字符都属于 0-9a-f"会把 facade.de、deca.cafe、cafe.de
+// 这类每个标签恰好都能用十六进制字母拼出的真实公网域名判成地址字面量，后果是整个出站内镜对该渠道静默失效
+// （素材继续带内网地址交给上游），以及管理员存不下合法的 Endpoint。
+func hostLooksLikeAddressLiteral(host string) bool {
+	segments := strings.Split(strings.ToLower(strings.TrimSpace(host)), ".")
+	if len(segments) == 0 || len(segments) > 4 {
+		return false
+	}
+	for _, segment := range segments {
+		if digits, hexOnly := strings.CutPrefix(segment, "0x"); hexOnly {
+			if digits == "" || !eachRune(digits, isHexDigit) {
+				return false
+			}
+			continue
+		}
+		if segment == "" || !eachRune(segment, isDecimalDigit) {
+			return false
+		}
+	}
+	return true
+}
+
+func eachRune(value string, accept func(rune) bool) bool {
+	for _, r := range value {
+		if !accept(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func isDecimalDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+func isHexDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')
+}
+
+// blockedSpecialPurposeIP 补上 blockedOutboundIP 没覆盖的特殊用途与共享带宽段（CGNAT 100.64/10、
+// 基准测试 198.18/15、文档与示例网段等），与自定义中转使用同一份前缀表。
+func blockedSpecialPurposeIP(ip net.IP) bool {
 	address, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return true
@@ -484,6 +578,10 @@ func blockedCustomRelayIP(ip net.IP) bool {
 		}
 	}
 	return false
+}
+
+func blockedCustomRelayIP(ip net.IP) bool {
+	return blockedOutboundIP(ip) || blockedSpecialPurposeIP(ip)
 }
 
 func allowPrivateUpstreams() bool {

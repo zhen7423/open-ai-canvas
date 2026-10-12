@@ -317,6 +317,25 @@ export type AdminArkPrivateAssetSetting = {
     updatedAt?: string;
 };
 
+export type AdminProviderEgressSetting = {
+    enabled: boolean;
+    provider: string;
+    region: string;
+    endpoint: string;
+    bucket: string;
+    accessKeyId: string;
+    accessKeySecret?: string;
+    hasAccessKeySecret: boolean;
+    pathPrefix: string;
+    cdnBaseUrl: string;
+    cdnAuthMode: string;
+    mappedObjectCount?: number;
+    expiresAfterHours?: number;
+    updatedBy?: string;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
 export type RuntimeResourcePolicy = {
     resourceUploadMB: number;
     generatedFileMB: number;
@@ -335,6 +354,7 @@ export type RuntimeStoragePolicy = {
     transferTimeoutSeconds: number;
     accessURLTTLSeconds: number;
     providerAccessURLTTLSeconds: number;
+    providerEgressRetentionDays: number;
     nonSeekableBufferMB: number;
     errorBodyKB: number;
 };
@@ -585,6 +605,22 @@ export function getAdminArkPrivateAssetSetting() {
 
 export function updateAdminArkPrivateAssetSetting(input: Partial<AdminArkPrivateAssetSetting>) {
     return http.patch<{ setting: AdminArkPrivateAssetSetting }>("/admin/settings/ark-private-assets", input);
+}
+
+export function getAdminProviderEgressSetting() {
+    return http.get<{ setting: AdminProviderEgressSetting }>("/admin/settings/provider-egress");
+}
+
+export function updateAdminProviderEgressSetting(input: Partial<AdminProviderEgressSetting>) {
+    return http.patch<{ setting: AdminProviderEgressSetting }>("/admin/settings/provider-egress", input);
+}
+
+export function testAdminProviderEgressConnection(input: Partial<AdminProviderEgressSetting>) {
+    return http.post<{ bucket: string }>("/admin/settings/provider-egress/test", input);
+}
+
+export function clearAdminProviderEgressMappings() {
+    return http.delete<{ deleted: number; remaining: number }>("/admin/settings/provider-egress/mappings");
 }
 
 export function getAdminRuntimePolicySetting() {

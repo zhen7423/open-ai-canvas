@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 50
+const CurrentSchemaVersion int64 = 51
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -165,6 +165,12 @@ var schemaMigrations = []migration{
 	}},
 	{version: 50, name: "canvas_mutation_receipts", checksum: "sha256:canvas-mutation-receipts-v50-20261011", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.CanvasMutationReceipt{})
+	}},
+	// 内镜台账登记在 51：本分支合并前就先把编号让开上游已占用的 50，两条现在并存。
+	// 51 必须排在列表最后——TestCurrentSchemaVersionMatchesMigrationPlan 是拿
+	// CurrentSchemaVersion 与计划末项比对的，顺序反了直接红。
+	{version: 51, name: "provider_egress_objects", checksum: "sha256:provider-egress-objects-v51-20261011", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProviderEgressObject{})
 	}},
 }
 

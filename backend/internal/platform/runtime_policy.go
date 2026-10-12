@@ -71,9 +71,12 @@ type RuntimeResourcePolicy struct {
 }
 
 type RuntimeStoragePolicy struct {
-	TransferTimeoutSeconds      int   `json:"transferTimeoutSeconds"`
-	AccessURLTTLSeconds         int   `json:"accessURLTTLSeconds"`
-	ProviderAccessURLTTLSeconds int   `json:"providerAccessURLTTLSeconds"`
+	TransferTimeoutSeconds      int `json:"transferTimeoutSeconds"`
+	AccessURLTTLSeconds         int `json:"accessURLTTLSeconds"`
+	ProviderAccessURLTTLSeconds int `json:"providerAccessURLTTLSeconds"`
+	// ProviderEgressRetentionDays 是出站内镜对象的最长保留天数：上游只在生成窗口内需要它，
+	// 长期把创作素材留在云上没有任何收益。0 表示按缺省值处理。
+	ProviderEgressRetentionDays int   `json:"providerEgressRetentionDays"`
 	NonSeekableBufferMB         int64 `json:"nonSeekableBufferMB"`
 	ErrorBodyKB                 int64 `json:"errorBodyKB"`
 }
@@ -164,6 +167,7 @@ func DefaultRuntimePolicy() RuntimePolicySetting {
 			TransferTimeoutSeconds:      120,
 			AccessURLTTLSeconds:         14_400,
 			ProviderAccessURLTTLSeconds: 14_400,
+			ProviderEgressRetentionDays: 7,
 			NonSeekableBufferMB:         64,
 			ErrorBodyKB:                 1,
 		},
@@ -416,6 +420,9 @@ func validateRuntimePolicy(value RuntimePolicySetting) error {
 	}
 	if storage.ProviderAccessURLTTLSeconds < 300 || storage.ProviderAccessURLTTLSeconds > 86_400 {
 		return kernel.BadAuthRequest("模型输入资源地址有效期必须是 300-86400 秒的整数")
+	}
+	if storage.ProviderEgressRetentionDays < 0 || storage.ProviderEgressRetentionDays > 90 {
+		return kernel.BadAuthRequest("出站内镜对象保留天数必须是 0-90 的整数 (0 表示按缺省 7 天)")
 	}
 	if storage.NonSeekableBufferMB < 1 || storage.NonSeekableBufferMB > maxRuntimeUploadMB {
 		return kernel.BadAuthRequest(fmt.Sprintf("对象存储非可寻址上传缓冲必须是 1-%d MB 的整数", maxRuntimeUploadMB))

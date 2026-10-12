@@ -98,6 +98,73 @@ func registerAdminSettingRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"setting": setting})
 	})
+	r.GET("/admin/settings/provider-egress", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		setting, err := svc.AdminProviderEgressSetting(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
+	r.PATCH("/admin/settings/provider-egress", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		var req service.ProviderEgressSettingRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		setting, err := svc.UpdateProviderEgressSetting(user, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"setting": setting})
+	})
+	r.POST("/admin/settings/provider-egress/test", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if !enforceRateLimit(c, "admin-provider-egress-test:"+user.ID, 6, time.Minute) {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		var req service.ProviderEgressSettingRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		bucket, err := svc.TestProviderEgressSetting(user, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"bucket": bucket})
+	})
+	r.DELETE("/admin/settings/provider-egress/mappings", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		deleted, remaining, err := svc.ClearProviderEgressMappings(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"deleted": deleted, "remaining": remaining})
+	})
 	r.GET("/admin/settings/drawing-engine", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
