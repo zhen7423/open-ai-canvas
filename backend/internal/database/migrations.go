@@ -163,8 +163,12 @@ var schemaMigrations = []migration{
 		}
 		return nil
 	}},
-	// 编号 50 已被上游 main 的 canvas_mutation_receipts 占用（sha256:canvas-mutation-receipts-v50-20261011），
-	// 本表登记为 51，合并时不需要再改号；49 之后直接跳到 51 是有意的，迁移器按计划逐项查记录，允许中间无项。
+	{version: 50, name: "canvas_mutation_receipts", checksum: "sha256:canvas-mutation-receipts-v50-20261011", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.CanvasMutationReceipt{})
+	}},
+	// 内镜台账登记在 51：本分支合并前就先把编号让开上游已占用的 50，两条现在并存。
+	// 51 必须排在列表最后——TestCurrentSchemaVersionMatchesMigrationPlan 是拿
+	// CurrentSchemaVersion 与计划末项比对的，顺序反了直接红。
 	{version: 51, name: "provider_egress_objects", checksum: "sha256:provider-egress-objects-v51-20261011", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.ProviderEgressObject{})
 	}},
