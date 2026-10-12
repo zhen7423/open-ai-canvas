@@ -31,7 +31,7 @@ Schema 45 新增 `upload_reservations`：`id`、`user_id`、`size`、`day`、`ex
 
 ## 结构迁移与版本
 
-当前结构版本为 49。版本 49 `banner_sort_order` 为 `banner_announcements` 增加可配置的 `sort_order` 展示顺序；版本 48 `channel_proxy_url` 为 `model_channels` 增加渠道级出站代理地址 `proxy_url`，支持 `socks5://`、`http://`、`https://`；留空时沿用全局代理。代理地址只返回管理员视图，普通用户目录不暴露渠道代理或其中的认证信息。版本 42 `cloud_agent_pi_sessions` 新增 `cloud_agent_pi_sessions` 表，按运行 ID 保存 Pi 原生 JSONL 会话快照、用户 ID、乐观并发 revision 和更新时间；会话正文由 Agent runtime 管理，Go 只将其作为不透明快照读写，不替代有界控制检查点、事件日志或任务记录。版本 41 `resource_thumbnail` 为 `resources` 增加缩略图元数据。版本 40 `builtin_skill_tombstones` 新增内置技能删除记录，管理员删除平台技能后，后续启动同步不会重新创建该技能；版本 39 `skill_library_categories` 新增 `skill_library_categories` 表，并为 `user_skill_states` 增加 `library_category_id`，保存个人技能库分类及每个用户对技能的归类；分类不改变 `skills.tag` 的技能广场共享分类。版本 38 `prefixed_id_sequence_reconcile` 创建（若缺失）并校准 `id_sequences`：`CHANNEL`、`MODEL`、`PTIER`、`ATTEMPT`、`LMODEL`、`REVISION`、`ROUTE` 按对应业务表的最大有效 ID 前移，包含软删除记录，不回退已有序列、不重写业务 ID。分配新 ID 时再次校准并检查冲突；SQLite → PostgreSQL 迁移完成后也校准序列。
+当前结构版本为 51。版本 51 `provider_egress_objects` 新增同名表，保存"本地素材送往要求公网地址的渠道"时因超出内联预算而镜像出去的映射，详见「出站内镜台账」。编号 50 是上游主干的 `canvas_mutation_receipts`，本特性主动让号到 51，因此 49 之后直接跳到 51 是有意的缺口，不是漏登记。新增表必须同时登记三处，漏任何一处都有一类库拿不到表：`database.Models()`（全新库基线路径）、`database/migrations.go` 的 `version: N`（已有库的版本化迁移，并同步抬高 `CurrentSchemaVersion`）、`cmd/migrate-sqlite-postgres` 的 `migrations()`（SQLite 搬 PostgreSQL 的表清单）。包内 `TestCurrentSchemaVersionMatchesMigrationPlan` 看住前两处的配对，`TestMigrationListCoversSchemaModels` 看住第三处。版本 49 `banner_sort_order` 为 `banner_announcements` 增加可配置的 `sort_order` 展示顺序；版本 48 `channel_proxy_url` 为 `model_channels` 增加渠道级出站代理地址 `proxy_url`，支持 `socks5://`、`http://`、`https://`；留空时沿用全局代理。代理地址只返回管理员视图，普通用户目录不暴露渠道代理或其中的认证信息。版本 42 `cloud_agent_pi_sessions` 新增 `cloud_agent_pi_sessions` 表，按运行 ID 保存 Pi 原生 JSONL 会话快照、用户 ID、乐观并发 revision 和更新时间；会话正文由 Agent runtime 管理，Go 只将其作为不透明快照读写，不替代有界控制检查点、事件日志或任务记录。版本 41 `resource_thumbnail` 为 `resources` 增加缩略图元数据。版本 40 `builtin_skill_tombstones` 新增内置技能删除记录，管理员删除平台技能后，后续启动同步不会重新创建该技能；版本 39 `skill_library_categories` 新增 `skill_library_categories` 表，并为 `user_skill_states` 增加 `library_category_id`，保存个人技能库分类及每个用户对技能的归类；分类不改变 `skills.tag` 的技能广场共享分类。版本 38 `prefixed_id_sequence_reconcile` 创建（若缺失）并校准 `id_sequences`：`CHANNEL`、`MODEL`、`PTIER`、`ATTEMPT`、`LMODEL`、`REVISION`、`ROUTE` 按对应业务表的最大有效 ID 前移，包含软删除记录，不回退已有序列、不重写业务 ID。分配新 ID 时再次校准并检查冲突；SQLite → PostgreSQL 迁移完成后也校准序列。
 
 版本 36 `cloud_agent_gemini_cache` 创建 `cloud_agent_gemini_caches`，保存用户范围内的官方 Gemini 缓存元数据；版本 37 `cloud_agent_gemini_cache_identity` 将缓存标识约束修正为 `(user_id, cache_key)`，移除旧的全局 cache_key 唯一索引。版本 35 `auth_notifications` 为认证通知与组合验证补齐 `auth_verifications`、`notification_quotas`、`sms_channels`、`sms_records` 四张表，并为 `users` 增加 `phone`、`email_verified_at`、`phone_verified_at`，为 `email_verification_codes` 增加 `attempts`；同时创建非空手机号唯一索引。版本 34 `task_media_recovery` 为 `tasks` 增加 `media_recovery_json`（text）和 `media_stage`（最长 24 字）。版本 33 `oauth_state_accepted_terms` 为 `o_auth_states` 增加非空布尔列 `accepted_terms`，默认 `false`，不替历史流程补造同意记录。
 
@@ -293,6 +293,20 @@ schema v27 为 `channel_model_price_tiers` 和 `billing_orders` 添加 `cost_con
 账号文件容量只统计 `ready` 资源，并按 Provider、Endpoint、Bucket、ObjectKey 对同一物理对象去重。上传中或失败记录不占用已存储容量。后台每小时检查资源生命周期：超过 1 小时的 `pending/failed` 记录，以及超过 24 小时仍没有任何素材、画布、任务或其他业务引用的 `ready` 记录，会在再次校验引用后删除数据库记录并写入 `resource_deletion_jobs`，由幂等 Worker 清理物理对象。
 
 素材状态为 `archived` 时进入回收站。后台按“资源与请求策略”中的 `recycleBinRetentionDays` 定期扫描过期项；`0` 表示永久保留。自动清理与用户手动彻底删除复用同一 service 引用校验和 `resource_deletion_jobs` Outbox，仍被画布、项目、任务或其他业务记录引用的素材不会被删除。
+
+## 出站内镜台账
+
+| 表 | 用途 | 关键边界 |
+| --- | --- | --- |
+| `provider_egress_objects` | 记录"本地素材送往公网渠道"时因超出内联预算而镜像出去的那份对象；预算内的图片走 Base64 内联，不落本表 | `(user_id, content_sha256, provider, bucket, delivery_revision)` 唯一；`endpoint`、`mime_type`、`size_bytes`、`resource_id`、`cdn_mode` 为审计列 |
+
+素材存放在服务器本地、而渠道要求参考素材能被上游直接取回时（例如秘塔 MiniMax H3 这类 `requiresPublicMediaUrls` 协议），后端在生成前决定交付形态：上游协议本身接受 `data:image/<小写格式>;base64,<Base64>`，所以单张 30 MB、单次请求图片合计 40 MB（编码后约 53 MB）以内的直接内联，不产生任何表记录；超出预算的才镜像一份到管理员单独配置的"出站内镜"桶，再把签出的公网地址交给上游。内联字节只在 worker 内存里生成、只进当次上游请求，不写回任务记录。主存储位置不受影响：该配置是独立的系统设置 `provider_egress`，与决定新上传落点的 `oss` 设置刻意分离。
+
+复用按内容指纹判定，因此 `content_sha256` 是镜像字节实算的 SHA-256，不是资源 ETag。`delivery_revision` 取存储与分发配置的摘要：换桶、改凭据或改 CDN 方式后旧行不再参与复用，避免把旧桶的对象键拼成新桶的域名。唯一索引是 `(user_id, content_sha256, provider, bucket, delivery_revision)`；列名用显式 `column:` 标签固定为 `content_sha256`、`cdn_mode`，不依赖 GORM 默认命名。建表登记按「结构迁移与版本」一节要求覆盖三处（`Models()`、`migrations.go` 的 `version: 51`、`cmd/migrate-sqlite-postgres` 的 `migrations()`）。并发首次上传撞唯一索引时读回已有行复用其对象键，不报错、不重复上传。
+
+对象名不直接用内容指纹，而是服务端密钥对（用户、内容指纹、投递指纹）的 HMAC 前 32 位十六进制。`sha256(像素)` 任何人重算得出，拿它当对象名等于给看过原图的人一条永久可用的推导路径；把投递指纹折进名字还保证换凭据后新旧映射不共用同一个对象，否则旧行到期时会删掉新行仍在用的文件。命中台账且 24 小时内用过则直接复用；超过 24 小时先用一次首字节 Range 读确认对象仍在，确认不在时删除该行并重新上传，防止桶被外部清空后长期下发失效地址。
+
+后台清理按"资源与请求策略"中的 `providerEgressRetentionDays` 扫描 `last_used_at`（`0` 表示按缺省 7 天），只处理与当前配置同 provider、同 bucket 的行；换桶后遗留在旧桶的对象由该桶的生命周期规则负责，本任务不会拿当前凭据去猜删别处的对象。物理删除失败的记录必须保留，等下一轮重试；内镜开关关掉后清理仍会执行，否则已镜像的公网副本再没人回收。管理端"删除对象并清空映射"同样先删云上对象再丢记录，删不掉的行保留并在结果中报数。
 
 ## 画布生成工具
 
