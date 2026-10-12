@@ -4,6 +4,7 @@ import { AlertTriangle, CloudUpload, Eraser, KeyRound, RefreshCw, RotateCcw, Sav
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlocker } from "react-router";
 
+import { cn } from "@/lib/utils";
 import { clearAdminProviderEgressMappings, getAdminProviderEgressSetting, testAdminProviderEgressConnection, updateAdminProviderEgressSetting, type AdminProviderEgressSetting } from "@/services/api/auth";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatusBadge, configuredSecretText, SettingsSectionCard } from "../components/admin-ui";
@@ -248,7 +249,7 @@ export default function ProviderEgressSettingsPage() {
     if (loading && !setting) {
         return (
             <AdminPageFrame title="出站内镜" description="预算内的参考图片直接内联给上游，超出可内联上限的才镜像成公网地址" scroll>
-                <div className="admin-settings-stack" aria-label="正在读出出站内镜配置" role="status">
+                <div className="admin-settings-stack admin-egress-settings" aria-label="正在读出出站内镜配置" role="status">
                     <Skeleton active paragraph={{ rows: 8 }} />
                 </div>
             </AdminPageFrame>
@@ -258,7 +259,7 @@ export default function ProviderEgressSettingsPage() {
     if (!setting) {
         return (
             <AdminPageFrame title="出站内镜" description="预算内的参考图片直接内联给上游，超出可内联上限的才镜像成公网地址" scroll>
-                <div className="admin-settings-stack">
+                <div className="admin-settings-stack admin-egress-settings">
                     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 p-4" role="alert">
                         <AlertTriangle className="size-5 shrink-0 text-destructive" aria-hidden="true" />
                         <div className="min-w-0 flex-1">
@@ -283,14 +284,14 @@ export default function ProviderEgressSettingsPage() {
 
     return (
         <AdminPageFrame title="出站内镜" description="预算内的参考图片直接内联给上游，超出可内联上限的才镜像成公网地址" scroll>
-            <div className="admin-settings-stack">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
+            <div className="admin-settings-stack admin-egress-settings">
+                <div className={cn("admin-egress-command-bar", dirty && "is-dirty")}>
+                    <div className="admin-egress-command-copy">
                         <strong>{dirty ? "出站内镜有调整待保存" : "出站内镜配置已同步"}</strong>
                         <AdminStatusBadge label={dirty ? "尚未生效" : "服务端配置"} tone={dirty ? "warning" : "neutral"} />
                         <AdminStatusBadge label={draftEnabled ? "内镜已启用" : "内镜已停用"} tone={draftEnabled ? "success" : "neutral"} />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="admin-egress-command-actions">
                         {dirty ? (
                             <Button icon={<RotateCcw className="size-4" />} disabled={saving} onClick={resetDraft}>
                                 撤销调整
