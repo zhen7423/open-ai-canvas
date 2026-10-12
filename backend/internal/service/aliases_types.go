@@ -222,6 +222,7 @@ type (
 	PromptOperationDefinition              = app.PromptOperationDefinition
 	PromptTemplateRequest                  = app.PromptTemplateRequest
 	PromptTemplateVariable                 = app.PromptTemplateVariable
+	ProviderEgressSettingRequest           = app.ProviderEgressSettingRequest
 	ProviderTaskQueryResult                = app.ProviderTaskQueryResult
 	PublicAppearanceSetting                = app.PublicAppearanceSetting
 	PublicArkPrivateAssetSetting           = app.PublicArkPrivateAssetSetting
@@ -244,6 +245,7 @@ type (
 	PublicModelAvailabilityDay             = app.PublicModelAvailabilityDay
 	PublicModelChannel                     = app.PublicModelChannel
 	PublicOSSSetting                       = app.PublicOSSSetting
+	PublicProviderEgressSetting            = app.PublicProviderEgressSetting
 	PublicRegistrationSetting              = app.PublicRegistrationSetting
 	PublicRuntimeLimits                    = app.PublicRuntimeLimits
 	PublicRuntimePolicySetting             = app.PublicRuntimePolicySetting

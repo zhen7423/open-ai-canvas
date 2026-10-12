@@ -25,6 +25,10 @@ import (
 )
 
 const ossSettingKey = "oss"
+
+// providerEgressSettingKey 是"出站内镜"的独立配置：只决定送往公网渠道的图片参考素材镜像到哪里，
+// 不参与主存储选址。它刻意不复用 ossSettingKey，因为那份设置的 Enabled 会改变新上传的落点。
+const providerEgressSettingKey = "provider_egress"
 const encryptedSettingPrefix = "enc:v1:"
 const defaultOSSPathPrefix = "open-ai-canvas"
 

@@ -416,6 +416,7 @@ func migrations() []tableMigration {
 		migrateTable[model.UserSkillState]("user_skill_states"),
 		migrateTable[model.BuiltinSkillTombstone]("builtin_skill_tombstones"),
 		migrateTable[model.Resource]("resources"),
+		migrateTable[model.ProviderEgressObject]("provider_egress_objects"),
 		migrateTable[model.ResourceDeletionJob]("resource_deletion_jobs"),
 		migrateTable[model.AnnouncementImageDraft]("announcement_image_drafts"),
 		migrateTable[model.Asset]("assets"),

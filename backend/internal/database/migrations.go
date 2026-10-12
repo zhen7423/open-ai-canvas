@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 49
+const CurrentSchemaVersion int64 = 51
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -162,6 +162,11 @@ var schemaMigrations = []migration{
 			return tx.Migrator().AddColumn(&model.BannerAnnouncement{}, "SortOrder")
 		}
 		return nil
+	}},
+	// 编号 50 已被上游 main 的 canvas_mutation_receipts 占用（sha256:canvas-mutation-receipts-v50-20261011），
+	// 本表登记为 51，合并时不需要再改号；49 之后直接跳到 51 是有意的，迁移器按计划逐项查记录，允许中间无项。
+	{version: 51, name: "provider_egress_objects", checksum: "sha256:provider-egress-objects-v51-20261011", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.ProviderEgressObject{})
 	}},
 }
 

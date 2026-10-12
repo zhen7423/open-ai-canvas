@@ -46,19 +46,19 @@ func officialVideoCreateBody(t *testing.T, input canvasGenerationInput) map[stri
 }
 
 func TestProviderMediaHydrationPolicyPrefersObjectURLs(t *testing.T) {
-	prefer := providerMediaHydrationPolicyFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceGrokImage)}})
+	prefer := providerMediaRequirementFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceGrokImage)}}).policy
 	if prefer.requireURL || !prefer.preferURL {
 		t.Fatalf("grok image policy = %#v", prefer)
 	}
-	required := providerMediaHydrationPolicyFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceMiniMaxVideo)}})
+	required := providerMediaRequirementFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceMiniMaxVideo)}}).policy
 	if !required.requireURL || !required.preferURL {
 		t.Fatalf("minimax policy = %#v", required)
 	}
-	bytesOnly := providerMediaHydrationPolicyFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceGeminiImage)}})
+	bytesOnly := providerMediaRequirementFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceGeminiImage)}}).policy
 	if bytesOnly.requireURL || bytesOnly.preferURL {
 		t.Fatalf("gemini image policy = %#v", bytesOnly)
 	}
-	masked := providerMediaHydrationPolicyFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceOpenAIImage)}, Mask: &providerMedia{ID: "mask"}})
+	masked := providerMediaRequirementFor(context.Background(), canvasGenerationInput{Config: providerConfig{InterfaceType: string(model.ChannelInterfaceOpenAIImage)}, Mask: &providerMedia{ID: "mask"}}).policy
 	if masked.requireURL || masked.preferURL {
 		t.Fatalf("openai mask policy = %#v", masked)
 	}

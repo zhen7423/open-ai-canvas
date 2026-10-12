@@ -18,7 +18,7 @@ func TestOpenAIImageLocalReferencesWithoutPublicURL(t *testing.T) {
 		ReferenceImages: []providerMedia{{ID: "character", StorageKey: "resource:ref-one"}},
 	}
 	ctx := ensureOfficialProtocolAdapter(context.Background(), input.Config.InterfaceType)
-	policy := providerMediaHydrationPolicyFor(ctx, input)
+	policy := providerMediaRequirementFor(ctx, input).policy
 	if policy.requireURL {
 		t.Fatal("local OpenAI image references must not require a public URL")
 	}

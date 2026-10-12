@@ -234,11 +234,15 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 		}
 	}
 	if resumedProviderRequestID(ctx) == "" {
-		mediaPolicy := providerMediaHydrationPolicyFor(ctx, input)
-		if err := s.hydrateGenerationMedia(userID, &input, mediaPolicy); err != nil {
+		mediaRequirement := providerMediaRequirementFor(ctx, input)
+		if err := s.hydrateGenerationMedia(userID, &input, mediaRequirement.policy); err != nil {
 			return nil, err
 		}
 		if err := s.prepareArkPrivateAssetReferences(ctx, userID, &input); err != nil {
+			return nil, err
+		}
+		// 本参图片出站内镜：主存本地、渠道却要公网地址时，镜像一份到内镜桶再改写。
+		if err := s.preparePublicEgressImageReferences(userID, &input, mediaRequirement); err != nil {
 			return nil, err
 		}
 	}
@@ -279,22 +283,35 @@ type providerMediaHydrationPolicy struct {
 	maxBytes   int64
 }
 
-func providerMediaHydrationPolicyFor(ctx context.Context, input canvasGenerationInput) providerMediaHydrationPolicy {
+// providerMediaRequirement 除策略本身外还带判定原因：出站内镜要在失败文案里
+// 说清是"内置协议要求"还是"插件声明 requiresPublicMediaUrls"，运维才知道该改哪里。
+type providerMediaRequirement struct {
+	policy providerMediaHydrationPolicy
+	reason string
+}
+
+func providerMediaRequirementFor(ctx context.Context, input canvasGenerationInput) providerMediaRequirement {
 	policy := providerMediaHydrationPolicy{preferURL: providerPrefersMediaURLs(input.Config.InterfaceType, input)}
+	reason := ""
 	switch strings.TrimSpace(input.Config.InterfaceType) {
 	case string(model.ChannelInterfaceNewAPIVideo), string(model.ChannelInterfaceNewAPIChannel1), string(model.ChannelInterfaceNewAPIChannel2), string(model.ChannelInterfaceVolcengineArkVideo), string(model.ChannelInterfaceVolcengineArkAgentPlanVideo), string(model.ChannelInterfaceMiniMaxVideo):
 		policy.requireURL = true
 		policy.preferURL = true
+		reason = "内置视频协议要求参考素材可被上游取回"
 	}
 	if adapter, ok := protocolAdapterForContext(ctx, input.Config.InterfaceType); ok && adapter.Metadata().RequiresPublicMediaURLs {
 		policy.requireURL = true
 		policy.preferURL = true
+		reason = "渠道插件声明 requiresPublicMediaUrls，参考素材需可被上游取回"
 	}
 	if input.Mask != nil {
+		// 遮罩必须发真实字节，requireURL 关掉的同时原因也清空，
+		// 否则失败文案会声称"渠道要求公网地址"而实际并不要求。
 		policy.requireURL = false
 		policy.preferURL = false
+		reason = ""
 	}
-	return policy
+	return providerMediaRequirement{policy: policy, reason: reason}
 }
 
 // providerPrefersMediaURLs 只列出明确接受远程 URL 的协议。

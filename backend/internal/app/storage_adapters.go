@@ -63,4 +63,8 @@ var (
 	deleteS3Object              = storage.DeleteS3Object
 	cloneOSSProviderCredentials = storage.CloneCredentials
 	normalizeOSSSetting         = storage.NormalizeSettings
+	storageDeliveryRevision     = storage.DeliveryRevision
+	// 出站内镜需要按 CDN 模式选择公网地址形态；这两个别名存在的理由同上（测试要替换 CDN 分支）。
+	cdnEnabled = storage.CDNEnabled
+	signCDNURL = storage.SignCDNURL
 )
