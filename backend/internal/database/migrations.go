@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 51
+const CurrentSchemaVersion int64 = 55
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -29,6 +29,14 @@ const prefixedIDSequenceReconcileChecksum = "sha256:prefixed-id-sequence-reconci
 const skillLibraryCategoriesChecksum = "sha256:skill-library-categories-v39-20260926"
 const builtinSkillTombstonesChecksum = "sha256:builtin-skill-tombstones-v40-20260927"
 const resourceThumbnailChecksum = "sha256:resource-thumbnail-v41-20260927"
+const workbenchToolsMigrationName = "workbench_tools_and_presets"
+const workbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v54-20261014"
+const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v51-20261014"
+const providerEgressMigrationName = "provider_egress_objects"
+const providerEgressMigrationVersion int64 = 55
+const providerEgressMigrationChecksum = "sha256:provider-egress-objects-v55-20261013"
+const legacyProviderEgressMigrationVersion int64 = 51
+const legacyProviderEgressMigrationChecksum = "sha256:provider-egress-objects-v51-20261011"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -166,10 +174,26 @@ var schemaMigrations = []migration{
 	{version: 50, name: "canvas_mutation_receipts", checksum: "sha256:canvas-mutation-receipts-v50-20261011", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.CanvasMutationReceipt{})
 	}},
-	// 内镜台账登记在 51：本分支合并前就先把编号让开上游已占用的 50，两条现在并存。
-	// 51 必须排在列表最后——TestCurrentSchemaVersionMatchesMigrationPlan 是拿
-	// CurrentSchemaVersion 与计划末项比对的，顺序反了直接红。
-	{version: 51, name: "provider_egress_objects", checksum: "sha256:provider-egress-objects-v51-20261011", apply: func(tx *gorm.DB) error {
+	{version: 51, name: "personal_profile_security", checksum: "sha256:personal-profile-security-v51-20261012", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.User{}, &model.AuthSession{}, &model.OAuthState{}, &model.AuthVerification{}, &model.UserAvatar{})
+	}},
+	{version: 52, name: "user_avatar_presets", checksum: "sha256:user-avatar-presets-v52-20261012", apply: func(tx *gorm.DB) error {
+		if tx.Migrator().HasColumn(&model.User{}, "AvatarPreset") {
+			return nil
+		}
+		return tx.Migrator().AddColumn(&model.User{}, "AvatarPreset")
+	}},
+	{version: 53, name: "user_login_logs", checksum: "sha256:user-login-logs-v53", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.LoginLog{})
+	}},
+	{version: 54, name: workbenchToolsMigrationName, checksum: workbenchToolsMigrationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.WorkbenchTool{}, &model.WorkbenchPreset{}, &model.Task{})
+	}},
+	// 内镜台账原本登记在 51，合并时让开上游的 personal_profile_security 挪到 55。
+	// 55 必须排在列表最后——TestCurrentSchemaVersionMatchesMigrationPlan 是拿
+	// CurrentSchemaVersion 与计划末项比对的，顺序反了直接红。旧库留在 51 的那条
+	// 记录由 normalizeLegacyProviderEgressMigration 归一化，不要求手工改账本。
+	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.ProviderEgressObject{})
 	}},
 }
@@ -501,6 +525,90 @@ func migrateSchemaV12(tx *gorm.DB) error {
 	return nil
 }
 
+func normalizeLegacyWorkbenchMigration(tx *gorm.DB) error {
+	var legacy schemaMigration
+	if err := tx.First(&legacy, "version = ?", 51).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("读取旧工作台迁移记录：%w", err)
+	}
+	if legacy.Name != workbenchToolsMigrationName || legacy.Checksum != legacyWorkbenchToolsMigrationChecksum {
+		return nil
+	}
+
+	var later []schemaMigration
+	if err := tx.Where("version > ?", legacy.Version).Order("version asc").Find(&later).Error; err != nil {
+		return fmt.Errorf("读取旧工作台迁移后的记录：%w", err)
+	}
+	if len(later) > 0 {
+		return fmt.Errorf("数据库迁移 51 使用旧工作台身份，但已存在后续迁移记录 %d；拒绝自动改写迁移账本", later[0].Version)
+	}
+	if !tx.Migrator().HasTable(&model.WorkbenchTool{}) || !tx.Migrator().HasTable(&model.WorkbenchPreset{}) {
+		return fmt.Errorf("数据库迁移 51 记录为旧工作台迁移，但工作台表不完整；请从备份恢复后再升级")
+	}
+
+	result := tx.Model(&schemaMigration{}).
+		Where("version = ? AND name = ? AND checksum = ?", legacy.Version, legacy.Name, legacy.Checksum).
+		Updates(map[string]any{
+			"version":  workbenchToolsMigrationVersion,
+			"name":     workbenchToolsMigrationName,
+			"checksum": workbenchToolsMigrationChecksum,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("归一化旧工作台迁移记录：%w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("归一化旧工作台迁移记录影响 %d 行，拒绝继续启动", result.RowsAffected)
+	}
+	return nil
+}
+
+const workbenchToolsMigrationVersion int64 = 54
+
+// normalizeLegacyProviderEgressMigration 处理本仓库特性分支留下的账本：出站内镜台账
+// 曾登记在版本 51，而合并后的上游把 51 用作 personal_profile_security，同号会让启动
+// 校验直接失败。仅在版本 51 精确等于旧内镜身份、其上没有其他迁移记录、且表已存在时，
+// 把这条已应用记录改写到规范版本 55；其余任何不符仍拒绝启动，不靠伪造记录绕过检查。
+func normalizeLegacyProviderEgressMigration(tx *gorm.DB) error {
+	var legacy schemaMigration
+	if err := tx.First(&legacy, "version = ?", legacyProviderEgressMigrationVersion).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("读取旧内镜台账迁移记录：%w", err)
+	}
+	if legacy.Name != providerEgressMigrationName || legacy.Checksum != legacyProviderEgressMigrationChecksum {
+		return nil
+	}
+
+	var later []schemaMigration
+	if err := tx.Where("version > ?", legacy.Version).Order("version asc").Find(&later).Error; err != nil {
+		return fmt.Errorf("读取旧内镜台账迁移后的记录：%w", err)
+	}
+	if len(later) > 0 {
+		return fmt.Errorf("数据库迁移 51 使用旧内镜台账身份，但已存在后续迁移记录 %d；拒绝自动改写迁移账本", later[0].Version)
+	}
+	if !tx.Migrator().HasTable(&model.ProviderEgressObject{}) {
+		return fmt.Errorf("数据库迁移 51 记录为旧内镜台账迁移，但出站内镜表不完整；请从备份恢复后再升级")
+	}
+
+	result := tx.Model(&schemaMigration{}).
+		Where("version = ? AND name = ? AND checksum = ?", legacy.Version, legacy.Name, legacy.Checksum).
+		Updates(map[string]any{
+			"version":  providerEgressMigrationVersion,
+			"name":     providerEgressMigrationName,
+			"checksum": providerEgressMigrationChecksum,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("归一化旧内镜台账迁移记录：%w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("归一化旧内镜台账迁移记录影响 %d 行，拒绝继续启动", result.RowsAffected)
+	}
+	return nil
+}
+
 func MigrateSchema(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		if tx.Dialector.Name() == "postgres" {
@@ -510,6 +618,12 @@ func MigrateSchema(db *gorm.DB) error {
 		}
 		if err := tx.AutoMigrate(&schemaMigration{}); err != nil {
 			return fmt.Errorf("初始化数据库迁移记录：%w", err)
+		}
+		if err := normalizeLegacyWorkbenchMigration(tx); err != nil {
+			return err
+		}
+		if err := normalizeLegacyProviderEgressMigration(tx); err != nil {
+			return err
 		}
 		plan, err := migrationsForDatabase(tx)
 		if err != nil {

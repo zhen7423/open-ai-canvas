@@ -39,6 +39,15 @@ func TestMigrateSchemaRecordsAndValidatesVersion(t *testing.T) {
 	if !db.Migrator().HasTable(&model.UploadReservation{}) {
 		t.Fatal("upload reservation migration missing")
 	}
+	if !db.Migrator().HasTable(&model.WorkbenchTool{}) || !db.Migrator().HasTable(&model.WorkbenchPreset{}) {
+		t.Fatal("schema migration v54 did not create workbench tool and preset tables")
+	}
+	if !db.Migrator().HasIndex(&model.WorkbenchTool{}, "idx_workbench_tools_kind_enabled_sort") {
+		t.Fatal("schema migration v54 did not create the workbench catalog index")
+	}
+	if !db.Migrator().HasIndex(&model.WorkbenchPreset{}, "idx_workbench_presets_tool_enabled_sort") {
+		t.Fatal("schema migration v54 did not create the workbench preset index")
+	}
 	if !db.Migrator().HasIndex(&schemaMigration{}, "idx_schema_migrations_applied_at") {
 		t.Fatal("schema migration v2 did not create the applied_at index")
 	}
@@ -86,6 +95,148 @@ func TestMigrateSchemaRecordsAndValidatesVersion(t *testing.T) {
 	}
 	if err := MigrateSchema(db); err != nil {
 		t.Fatalf("migration should be idempotent: %v", err)
+	}
+}
+
+func TestMigrateSchemaNormalizesLegacyWorkbenchMigrationV51(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-legacy-workbench-v51?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	// 55 是本仓库在 54 之后追加的出站内镜台账；不留在这里，否则旧工作台归一化
+	// 的"没有更高迁移记录"守卫会被这条正常记录误触发。
+	if err := db.Where("version IN ?", []int64{51, 52, 53, providerEgressMigrationVersion}).Delete(&schemaMigration{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&schemaMigration{}).Where("version = ?", 54).Updates(map[string]any{
+		"version":  51,
+		"name":     workbenchToolsMigrationName,
+		"checksum": legacyWorkbenchToolsMigrationChecksum,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateSchema(db); err != nil {
+		t.Fatalf("legacy workbench migration should be normalized: %v", err)
+	}
+	status, err := ReadSchemaStatus(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Ready || status.Current != CurrentSchemaVersion {
+		t.Fatalf("unexpected normalized schema status: %#v", status)
+	}
+	var normalized schemaMigration
+	if err := db.First(&normalized, "version = ?", workbenchToolsMigrationVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Name != workbenchToolsMigrationName || normalized.Checksum != workbenchToolsMigrationChecksum {
+		t.Fatalf("normalized workbench migration = %#v", normalized)
+	}
+	for _, item := range schemaMigrations {
+		var count int64
+		if err := db.Model(&schemaMigration{}).Where("version = ? AND name = ? AND checksum = ?", item.version, item.name, item.checksum).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if item.version != workbenchToolsMigrationVersion && count != 1 {
+			t.Fatalf("migration %d was not restored: %#v", item.version, item)
+		}
+	}
+}
+
+// 合并上游之前的库把出站内镜台账登记在版本 51，而上游后来把 51 用成了
+// personal_profile_security；不归一化就会以「数据库迁移 51 名称不一致」拒绝启动。
+func TestMigrateSchemaNormalizesLegacyProviderEgressMigrationV51(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-legacy-provider-egress-v51?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("version >= ?", legacyProviderEgressMigrationVersion).Delete(&schemaMigration{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&schemaMigration{
+		Version:   legacyProviderEgressMigrationVersion,
+		Name:      providerEgressMigrationName,
+		Checksum:  legacyProviderEgressMigrationChecksum,
+		AppliedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateSchema(db); err != nil {
+		t.Fatalf("legacy provider egress migration should be normalized: %v", err)
+	}
+	status, err := ReadSchemaStatus(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Ready || status.Current != CurrentSchemaVersion {
+		t.Fatalf("unexpected normalized schema status: %#v", status)
+	}
+	var normalized schemaMigration
+	if err := db.First(&normalized, "version = ?", providerEgressMigrationVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Name != providerEgressMigrationName || normalized.Checksum != providerEgressMigrationChecksum {
+		t.Fatalf("normalized provider egress migration = %#v", normalized)
+	}
+	if normalized.AppliedAt.IsZero() {
+		t.Fatalf("normalizing dropped the original applied time: %#v", normalized)
+	}
+	for _, item := range schemaMigrations {
+		if item.version == providerEgressMigrationVersion {
+			continue
+		}
+		var count int64
+		if err := db.Model(&schemaMigration{}).Where("version = ? AND name = ? AND checksum = ?", item.version, item.name, item.checksum).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("migration %d was not applied after normalizing: %#v", item.version, item)
+		}
+	}
+}
+
+// 旧内镜账本上面还压着别的迁移记录时，改写会猜错真实状态，必须拒绝而不是硬归一化。
+func TestMigrateSchemaRejectsLegacyProviderEgressWithLaterRecords(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-legacy-provider-egress-conflict?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("version >= ?", legacyProviderEgressMigrationVersion).Delete(&schemaMigration{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var avatarPresets migration
+	for _, item := range schemaMigrations {
+		if item.version == 52 {
+			avatarPresets = item
+		}
+	}
+	if avatarPresets.name == "" {
+		t.Fatal("migration plan has no version 52")
+	}
+	if err := db.Create(&[]schemaMigration{
+		{Version: legacyProviderEgressMigrationVersion, Name: providerEgressMigrationName, Checksum: legacyProviderEgressMigrationChecksum, AppliedAt: time.Now().UTC()},
+		{Version: avatarPresets.version, Name: avatarPresets.name, Checksum: avatarPresets.checksum, AppliedAt: time.Now().UTC()},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err = MigrateSchema(db)
+	if err == nil {
+		t.Fatal("expected a legacy provider egress record with later migrations to be rejected")
+	}
+	if !strings.Contains(err.Error(), "拒绝自动改写迁移账本") {
+		t.Fatalf("unexpected rejection reason: %v", err)
 	}
 }
 
