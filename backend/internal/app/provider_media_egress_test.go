@@ -522,8 +522,14 @@ func TestProviderEgressMirrorWritesLedgerWithUnguessableObjectKey(t *testing.T) 
 	if probe.rangeCalls != 0 {
 		t.Fatalf("24 小时内的复用不该做存在性探测：%d", probe.rangeCalls)
 	}
-	if second.ReferenceImages[0].URL != got {
-		t.Fatalf("复用后地址漂移：%q", second.ReferenceImages[0].URL)
+	// 复用命中的是同一个对象，所以只比路径：签名地址每次都会重新签发，
+	// 有效期串里带时间，整串比较会把跨过秒界的正常复用误判成地址漂移。
+	reusedURL := second.ReferenceImages[0].URL
+	if strings.SplitN(reusedURL, "?", 2)[0] != strings.SplitN(got, "?", 2)[0] {
+		t.Fatalf("复用后对象路径漂移：%q vs %q", reusedURL, got)
+	}
+	if !strings.Contains(reusedURL, "?sig=mock") {
+		t.Fatalf("命中台账后没有重新签发地址：%q", reusedURL)
 	}
 
 	records, err := svc.repo.ProviderEgressObjectsExpired(time.Now().Add(10*time.Minute), "aliyun", "yingce-egress", 10)
