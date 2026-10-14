@@ -334,40 +334,42 @@ export default function ProviderEgressSettingsPage() {
                         description="只在参考图片超出可内联预算时才会用到这里的桶，不会改变素材的主存储位置。"
                         status={<AdminStatusBadge label={credentialsReady ? "已配置" : "待配置"} tone={credentialsReady ? "success" : "neutral"} />}
                     >
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <Form.Item name="provider" label="存储类型" extra="仅支持阿里云 OSS、腾讯云 COS、七牛云 Kodo 和通用 S3。">
-                                <Select options={providerOptions} placeholder="选择存储类型" />
-                            </Form.Item>
-                            <Form.Item name="region" label="Region" extra="阿里云与 COS 用于签名；七牛按区域选择接入点。">
-                                <Input autoComplete="off" placeholder="oss-cn-beijing" />
-                            </Form.Item>
-                            <Form.Item name="endpoint" label="Endpoint">
-                                <Input autoComplete="off" placeholder="oss-cn-beijing.aliyuncs.com" />
-                            </Form.Item>
-                            <Form.Item name="bucket" label="Bucket">
-                                <Input autoComplete="off" placeholder="存放出站内镜对象的桶" />
-                            </Form.Item>
-                            <Form.Item name="accessKeyId" label="AccessKeyId">
-                                <Input autoComplete="off" placeholder="仅保存在服务端" />
-                            </Form.Item>
-                            <Form.Item name="accessKeySecret" label={setting.hasAccessKeySecret ? `SecretKey（${configuredSecretText}）` : "SecretKey"} extra={setting.hasAccessKeySecret ? "AccessKeyId 不变时留空可保留原密钥。" : undefined}>
-                                <Input.Password autoComplete="new-password" placeholder={setting.hasAccessKeySecret ? "留空保留原密钥" : "仅保存在服务端"} />
-                            </Form.Item>
-                            <Form.Item name="pathPrefix" label="对象前缀" extra="内镜对象固定落在该前缀下的 egress/ 子目录。">
-                                <Input autoComplete="off" placeholder="open-ai-canvas" />
-                            </Form.Item>
-                            <Form.Item name="cdnBaseUrl" label="CDN 域名（可选）">
-                                <Input autoComplete="off" placeholder="https://cdn.example.com" />
-                            </Form.Item>
-                            <Form.Item name="cdnAuthMode" label="CDN 鉴权方式" extra="选了公有读时，地址不带签名参数；其余情况回源签名。">
-                                <Select options={cdnModeOptions} placeholder="不使用 CDN" />
-                            </Form.Item>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 pt-2">
-                            <Button icon={<Zap className="size-4" />} loading={testing} disabled={saving || refreshing} onClick={() => void runTest()}>
-                                测试连通性
-                            </Button>
-                            <span className="text-xs text-muted-foreground">测试会写入并读回一个极小探针对象，随后删除。</span>
+                        <div className="admin-egress-form-section">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <Form.Item name="provider" label="存储类型" extra="仅支持阿里云 OSS、腾讯云 COS、七牛云 Kodo 和通用 S3。">
+                                    <Select options={providerOptions} placeholder="选择存储类型" />
+                                </Form.Item>
+                                <Form.Item name="region" label="Region" extra="阿里云与 COS 用于签名；七牛按区域选择接入点。">
+                                    <Input autoComplete="off" placeholder="oss-cn-beijing" />
+                                </Form.Item>
+                                <Form.Item name="endpoint" label="Endpoint">
+                                    <Input autoComplete="off" placeholder="oss-cn-beijing.aliyuncs.com" />
+                                </Form.Item>
+                                <Form.Item name="bucket" label="Bucket">
+                                    <Input autoComplete="off" placeholder="存放出站内镜对象的桶" />
+                                </Form.Item>
+                                <Form.Item name="accessKeyId" label="AccessKeyId">
+                                    <Input autoComplete="off" placeholder="仅保存在服务端" />
+                                </Form.Item>
+                                <Form.Item name="accessKeySecret" label={setting.hasAccessKeySecret ? `SecretKey（${configuredSecretText}）` : "SecretKey"} extra={setting.hasAccessKeySecret ? "AccessKeyId 不变时留空可保留原密钥。" : undefined}>
+                                    <Input.Password autoComplete="new-password" placeholder={setting.hasAccessKeySecret ? "留空保留原密钥" : "仅保存在服务端"} />
+                                </Form.Item>
+                                <Form.Item name="pathPrefix" label="对象前缀" extra="内镜对象固定落在该前缀下的 egress/ 子目录。">
+                                    <Input autoComplete="off" placeholder="open-ai-canvas" />
+                                </Form.Item>
+                                <Form.Item name="cdnBaseUrl" label="CDN 域名（可选）">
+                                    <Input autoComplete="off" placeholder="https://cdn.example.com" />
+                                </Form.Item>
+                                <Form.Item name="cdnAuthMode" label="CDN 鉴权方式" extra="选了公有读时，地址不带签名参数；其余情况回源签名。">
+                                    <Select options={cdnModeOptions} placeholder="不使用 CDN" />
+                                </Form.Item>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 pt-2">
+                                <Button icon={<Zap className="size-4" />} loading={testing} disabled={saving || refreshing} onClick={() => void runTest()}>
+                                    测试连通性
+                                </Button>
+                                <span className="text-xs text-muted-foreground">测试会写入并读回一个极小探针对象，随后删除。</span>
+                            </div>
                         </div>
                     </SettingsSectionCard>
 
@@ -377,23 +379,25 @@ export default function ProviderEgressSettingsPage() {
                         description="上游接受 Base64 内联图片，所以预算内的本地参考图片直接内联交付；只有超出可内联上限的才需要这里的桶。"
                         status={<AdminStatusBadge label={draftEnabled ? "已启用" : "已停用"} tone={draftEnabled ? "success" : "neutral"} />}
                     >
-                        <div className="flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                                <strong>镜像超出内联预算的参考图片</strong>
-                                <p className="text-sm text-muted-foreground">关闭后，预算内的小图仍按 Base64 内联正常出图；只有超出可内联上限的图片会直接报“需要配置出站内镜”，不再静默下发上游取不到的内网地址。</p>
+                        <div className="admin-egress-form-section">
+                            <div className="flex flex-wrap items-center justify-between gap-4">
+                                <div>
+                                    <strong>镜像超出内联预算的参考图片</strong>
+                                    <p className="text-sm text-muted-foreground">关闭后，预算内的小图仍按 Base64 内联正常出图；只有超出可内联上限的图片会直接报“需要配置出站内镜”，不再静默下发上游取不到的内网地址。</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span>{draftEnabled ? "启用" : "停用"}</span>
+                                    <Form.Item name="enabled" valuePropName="checked" noStyle>
+                                        <Switch aria-label="启用出站内镜，保存修改后生效" />
+                                    </Form.Item>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <span>{draftEnabled ? "启用" : "停用"}</span>
-                                <Form.Item name="enabled" valuePropName="checked" noStyle>
-                                    <Switch aria-label="启用出站内镜，保存修改后生效" />
-                                </Form.Item>
-                            </div>
+                            <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+                                <li>可内联上限按上游契约留出余量；触发镜像时任务报错会写明本次图片合计字节与单张/合计上限。</li>
+                                <li>镜像出去的素材在厂商访问地址有效期内可被公网读取{ttlHours ? `（当前有效期 ${ttlHours} 小时）` : ""}。</li>
+                                <li>本期只交付图片素材（内联或镜像）；参考视频与参考音频仍要求上游可达地址。</li>
+                            </ul>
                         </div>
-                        <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                            <li>可内联上限按上游契约留出余量；触发镜像时任务报错会写明本次图片合计字节与单张/合计上限。</li>
-                            <li>镜像出去的素材在厂商访问地址有效期内可被公网读取{ttlHours ? `（当前有效期 ${ttlHours} 小时）` : ""}。</li>
-                            <li>本期只交付图片素材（内联或镜像）；参考视频与参考音频仍要求上游可达地址。</li>
-                        </ul>
                     </SettingsSectionCard>
 
                     <SettingsSectionCard
@@ -402,11 +406,13 @@ export default function ProviderEgressSettingsPage() {
                         description="镜像出去的同一张图按内容指纹只上传一次；到期对象由后台清理任务按保留天数回收。内联交付的图片不占映射。"
                         status={<AdminStatusBadge label={`已映射 ${mappedCount} 个对象`} tone={mappedCount > 0 ? "info" : "neutral"} />}
                     >
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button icon={<Eraser className="size-4" />} disabled={saving || refreshing || mappedCount === 0} onClick={runClearMappings}>
-                                删除对象并清空映射
-                            </Button>
-                            <span className="text-xs text-muted-foreground">桶被外部清空、换凭据或换了桶之后可以用；清空后的下一张图会重新上传。</span>
+                        <div className="admin-egress-form-section">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button icon={<Eraser className="size-4" />} disabled={saving || refreshing || mappedCount === 0} onClick={runClearMappings}>
+                                    删除对象并清空映射
+                                </Button>
+                                <span className="text-xs text-muted-foreground">桶被外部清空、换凭据或换了桶之后可以用；清空后的下一张图会重新上传。</span>
+                            </div>
                         </div>
                     </SettingsSectionCard>
                 </Form>

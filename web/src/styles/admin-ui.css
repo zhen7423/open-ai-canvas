@@ -4510,6 +4510,12 @@
     padding-bottom: 24px;
 }
 
+/* 小节正文的内缩由页级包装层负责：共享的 .admin-settings-section-content 只有 4px 0，
+   左右不留白，字段会贴到卡片边缘。取值与 .admin-ark-form-grid、.admin-storage-form-section 一致。 */
+.admin-egress-form-section {
+    padding: 18px 20px 4px;
+}
+
 .admin-egress-settings .admin-settings-section {
     border: 1px solid var(--admin-card-border);
 }

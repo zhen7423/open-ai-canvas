@@ -3099,6 +3099,10 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - [ ] 已有 PostgreSQL 部署的新表结构迁移未在真实库执行（仅 SQLite 内存库 AutoMigrate 验证）。
 - [ ] 已知缺口，非本轮范围：参考视频与参考音频同样受内网地址限制；`Mode == "image"` 的图生图渠道未覆盖；并发首传撞唯一索引的复用路径未被测试真实并发触发。
 - [ ] 走查登记、本轮不改行为的三条：（1）内联预算只约束"渠道要求素材可取回"的那条路径，`requireURL` 为假的渠道仍由 hydration 按 `Resource.ResourceUploadMB` 内联，那条路上没有单张 30 MB / 合计 40 MB 的闸，理论可以把请求体撑过上游 64 MB——本期不动，避免改到别的渠道协议。（2）`media.StorageKey` 不是 `resource:` 前缀的素材（浏览器直传的临时引用等）仍会原样带着内网地址交给上游，这是"只改写本仓库资源"的边界，不是遗漏。（3）`CANVAS_PUBLIC_BASE_URL` 未配置时任务在 hydration 阶段就以"服务器本地存储尚未配置服务器访问地址"结束，走不到内联/镜像，所以"没配 base 也能出图"这句话只对"配了内网 base 但没配桶"的情形成立；代码注释与设计稿已按此更正。（4）`provider_media_hydration.go` 对"渠道要求可取回、而浏览器直接塞来 data URI"的素材仍硬拒并提示"请先上传到对象存储或提供公网素材地址"——这句话在本轮之后不再是唯一出路（服务端自己会内联），但改动它会牵动其他渠道的既有断言，本期只登记不改。
+- [x] 表单正文补上页级内缩 `.admin-egress-form-section { padding: 18px 20px 4px }`，三个 `SettingsSectionCard` 的正文各包一层：此前正文直接落在共享的 `.admin-settings-section-content` 里，而 `admin-chrome.css` 给它的值是 `padding: 4px 0`（左右为零），字段贴到卡片边缘。取值逐字取自邻居的同名内缩（`.admin-ark-form-grid`、`.admin-storage-form-section` 都是 `18px 20px 4px`），不是新造的数。回归锁加在 `web/test/admin-ui-regressions.test.ts`（断言三个包装 + 与邻居取值同源）；变异验证：把类名改掉立即 `(fail)`，恢复后 18 项全绿。前端 `tsc --noEmit`、`eslint src test`、`prettier --check`（本轮两个改动文件）、`bun run pretest` 全通过。
+- [ ] 浏览器验收：出站内镜三个小节的左右内缩要和"方舟素材库""对象存储"两页一致，本轮只做了规则层与构建产物核对，没有登录看页面。
+- [ ] 走查发现两处同类隐患，本轮按"只修表单内缩"处理、没顺手改：（1）`admin-ui.css` 里 `.admin-egress-settings` 那三条 section 覆写（描边、摘要与正文底色）与 `[data-admin-root] .admin-settings-section*` 同为两类特异性，而 `admin-chrome.css` 在 `admin-shell.tsx` 里更晚 import，实际被它覆盖，等于写了没生效；（2）`.admin-egress-command-bar` 没进 `admin-chrome.css` 那份 `:is(...)` 工具条清单，所以它保持自己的浮起卡片样式，而邻居页都是贴边扁平条。要不要按邻居的扁平样式把它们收进唯一源，等用户定。
+
 ## 节点补丁字段基线
 
 - 已修复：节点可选字段的 undefined 在 JSON 操作请求中转换为 null，避免基线或删除值被丢弃；缺省与 undefined 的变化不提交。旧队列只使用原始快照恢复无效补丁，保留 mutationId，不使用当前云端值替代基线。
