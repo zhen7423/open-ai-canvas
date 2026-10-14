@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 	"yingce/backend/internal/repository"
 
 	"gorm.io/driver/sqlite"
@@ -472,6 +473,46 @@ func TestImageResolutionPricingOnSystemChannel(t *testing.T) {
 				t.Fatalf("priceTierId = %#v, want %s", cfg["priceTierId"], tc.wantTier)
 			}
 		})
+	}
+}
+
+func TestParameterizedOpenAIAspectPresetSystemChannelPersistsPixelExecutionSize(t *testing.T) {
+	profile := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceOpenAIImage), "GPT Image 2.5")
+	profile.Image.Parameters = []protocol.ImageParameter{{
+		Name: "size", Label: "画幅 / 尺寸", Type: "string",
+		Values: []any{"auto", "1824x1024", "1024x1824", "1024x1024"}, Default: "1824x1024",
+		Pricing: true, Binding: "aspectRatio", Encoding: "pixels",
+	}}
+	profile.Image.Size = ImageSizeConfig{
+		Parameter: "size", Values: []string{"auto", "1824x1024", "1024x1824", "1024x1024"}, Default: "1824x1024",
+		Presets: []ImageSizePreset{
+			{Tier: "1k", Ratio: "16:9", Size: "1824x1024", Width: 1824, Height: 1024},
+			{Tier: "1k", Ratio: "9:16", Size: "1024x1824", Width: 1024, Height: 1824},
+			{Tier: "1k", Ratio: "1:1", Size: "1024x1024", Width: 1024, Height: 1024},
+		},
+	}
+	if err := projectImageParameters(profile.Image); err != nil {
+		t.Fatal(err)
+	}
+	svc, _, channel, channelModel := createSystemChannelSelectionFixture(t, "image", model.ChannelInterfaceOpenAIImage, profile, []model.ChannelModelPriceTier{
+		newSelectionPriceTier("tier-1k", `{"size":"1824x1024"}`, "provider-1k", "fixed_request"),
+	})
+	input := map[string]any{
+		"mode": "image",
+		"config": map[string]any{
+			"channelId":       channel.ID,
+			"model":           channelModel.ModelKey,
+			"imageParameters": map[string]any{"size": "16:9"},
+		},
+	}
+	resolved, err := svc.resolveSystemChannelModelSelection(input, "canvas_image", "")
+	if err != nil {
+		t.Fatalf("resolve error = %v", err)
+	}
+	config := resolved["config"].(map[string]any)
+	parameters := config["imageParameters"].(map[string]any)
+	if parameters["size"] != "1824x1024" || config["size"] != "1824x1024" {
+		t.Fatalf("parameterized size = %#v, config = %#v", parameters["size"], config["size"])
 	}
 }
 
