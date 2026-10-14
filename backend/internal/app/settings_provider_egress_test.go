@@ -541,3 +541,96 @@ func TestProviderEgressSaveResponseCarriesTTLHint(t *testing.T) {
 		t.Fatalf("GET 与 PATCH 的有效期不一致：%d vs %d", read.ExpiresAfterHours, saved.ExpiresAfterHours)
 	}
 }
+
+func TestProviderEgressDeliveryModeSurvivesToggleOnlyPatch(t *testing.T) {
+	svc := newResourceTestService(t)
+	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
+
+	saved, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{
+		Enabled: true, DeliveryMode: providerEgressDeliveryAlwaysMirror, Provider: "aliyun", Region: "oss-cn-beijing",
+		Endpoint: "oss-cn-beijing.aliyuncs.com", Bucket: "yingce-egress",
+		AccessKeyID: "AKID", AccessKeySecret: "secret", PathPrefix: "canvas",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.DeliveryMode != providerEgressDeliveryAlwaysMirror {
+		t.Fatalf("保存后公开态应回显交付形态：%#v", saved)
+	}
+
+	// 只翻开关必须连同模式一起保留：SecretKey 从不回显，清掉就等于逼管理员重打密钥，
+	// 与之前"只发 enabled 冲掉桶配置"是同一类缺陷。
+	disabled, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{Enabled: false})
+	if err != nil {
+		t.Fatalf("只发 enabled:false 应能关闸：%v", err)
+	}
+	if disabled.DeliveryMode != providerEgressDeliveryAlwaysMirror || disabled.Bucket != "yingce-egress" || !disabled.HasAccessKeySecret {
+		t.Fatalf("关闸后模式与配置应原样保留：%#v", disabled)
+	}
+	enabled, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{Enabled: true})
+	if err != nil {
+		t.Fatalf("只发 enabled:true 应能开回来：%v", err)
+	}
+	if enabled.DeliveryMode != providerEgressDeliveryAlwaysMirror {
+		t.Fatalf("开回后交付形态漂移：%#v", enabled)
+	}
+
+	// 显式改回内联优先也要真的写进去。
+	back, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{
+		Enabled: true, DeliveryMode: providerEgressDeliveryInlineFirst, Provider: "aliyun", Region: "oss-cn-beijing",
+		Endpoint: "oss-cn-beijing.aliyuncs.com", Bucket: "yingce-egress",
+		AccessKeyID: "AKID", AccessKeySecret: "secret", PathPrefix: "canvas",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.DeliveryMode != providerEgressDeliveryInlineFirst {
+		t.Fatalf("切回内联优先失败：%#v", back)
+	}
+}
+
+func TestProviderEgressSettingRejectsUnknownDeliveryMode(t *testing.T) {
+	svc := newResourceTestService(t)
+	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
+
+	// 关着也要拒：存进库的坏值不会因为总闸关着就无害，下一次启用会带着它上线。
+	if _, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{Enabled: false, DeliveryMode: "mirror_all"}); err == nil ||
+		!strings.Contains(err.Error(), "交付形态") {
+		t.Fatalf("非法交付形态必须被拒：%v", err)
+	}
+	if _, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{
+		Enabled: true, DeliveryMode: "mirror_all", Provider: "aliyun",
+		Endpoint: "oss-cn-beijing.aliyuncs.com", Bucket: "yingce-egress",
+		AccessKeyID: "AKID", AccessKeySecret: "secret",
+	}); err == nil || !strings.Contains(err.Error(), "交付形态") {
+		t.Fatalf("启用态保存路径同样要拒非法值：%v", err)
+	}
+	for _, mode := range []string{providerEgressDeliveryInlineFirst, providerEgressDeliveryAlwaysMirror} {
+		if _, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{Enabled: false, DeliveryMode: mode}); err != nil {
+			t.Fatalf("合法值 %s 不该被拒：%v", mode, err)
+		}
+	}
+}
+
+// 旧库的 provider_egress JSON 里根本没有 deliveryMode 这个键，读出来必须按内联优先理解，
+// 不能因为缺字段就变成"未知形态"或误走镜像。
+func TestProviderEgressLegacySettingReadsAsInlineFirst(t *testing.T) {
+	svc := newResourceTestService(t)
+	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
+	if _, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{
+		Enabled: true, Provider: "aliyun", Region: "oss-cn-beijing",
+		Endpoint: "oss-cn-beijing.aliyuncs.com", Bucket: "yingce-egress",
+		AccessKeyID: "AKID", AccessKeySecret: "secret", PathPrefix: "canvas",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	setProviderEgressDeliveryModeRaw(t, svc, "")
+
+	public, err := svc.AdminProviderEgressSetting(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public.DeliveryMode != providerEgressDeliveryInlineFirst {
+		t.Fatalf("缺 deliveryMode 键的旧记录应读成内联优先，实际 %#v", public.DeliveryMode)
+	}
+}

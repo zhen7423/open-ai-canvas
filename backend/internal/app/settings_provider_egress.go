@@ -25,8 +25,16 @@ import (
 // providerEgressObjectDir 是内镜对象在 PathPrefix 下的固定子目录；回收和桶生命周期规则都按它定位。
 const providerEgressObjectDir = "egress"
 
+// 交付形态两档：inline_first 按内联预算决定（缺省，也是旧记录缺字段时的解读），
+// always_mirror 一律先镜像成公网地址——用于不收 data URI 的渠道。
+const (
+	providerEgressDeliveryInlineFirst  = "inline_first"
+	providerEgressDeliveryAlwaysMirror = "always_mirror"
+)
+
 type ProviderEgressSettingRequest struct {
 	Enabled         bool   `json:"enabled"`
+	DeliveryMode    string `json:"deliveryMode"`
 	Provider        string `json:"provider"`
 	Region          string `json:"region"`
 	Endpoint        string `json:"endpoint"`
@@ -40,6 +48,7 @@ type ProviderEgressSettingRequest struct {
 
 type PublicProviderEgressSetting struct {
 	Enabled            bool      `json:"enabled"`
+	DeliveryMode       string    `json:"deliveryMode"`
 	Provider           string    `json:"provider"`
 	Region             string    `json:"region"`
 	Endpoint           string    `json:"endpoint"`
@@ -58,6 +67,7 @@ type PublicProviderEgressSetting struct {
 
 type providerEgressSettingValue struct {
 	Enabled         bool   `json:"enabled"`
+	DeliveryMode    string `json:"deliveryMode"`
 	Provider        string `json:"provider"`
 	Region          string `json:"region"`
 	Endpoint        string `json:"endpoint"`
@@ -270,7 +280,8 @@ func providerEgressSettingForRecord(current ossSettingValue, record model.Provid
 func (s *Service) readProviderEgressSetting() (*model.SystemSetting, providerEgressSettingValue, error) {
 	setting, err := s.repo.SystemSetting(providerEgressSettingKey)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, providerEgressSettingValue{}, nil
+		// 从没配过内镜：也要给出归一化后的形态值，别让调用方看到空字符串。
+		return nil, normalizeProviderEgressSetting(providerEgressSettingValue{}), nil
 	}
 	if err != nil {
 		return nil, providerEgressSettingValue{}, err
@@ -318,6 +329,12 @@ func (s *Service) activeProviderEgressSetting() (ossSettingValue, bool, error) {
 	if err != nil {
 		return ossSettingValue{}, false, err
 	}
+	return s.activeProviderEgressFromValue(value)
+}
+
+// activeProviderEgressFromValue 是同一套判定，但吃已经读出来的值：交付形态与"能不能出桶"
+// 必须来自同一次读取，分两次读会让一次任务可能同时看到新模式和旧配置。
+func (s *Service) activeProviderEgressFromValue(value providerEgressSettingValue) (ossSettingValue, bool, error) {
 	if !value.Enabled {
 		return ossSettingValue{}, false, nil
 	}
@@ -328,13 +345,28 @@ func (s *Service) activeProviderEgressSetting() (ossSettingValue, bool, error) {
 	return setting, true, nil
 }
 
+// providerEgressAlwaysMirror 判断管理员是否选了"全部镜像"交付形态。
+func (v providerEgressSettingValue) providerEgressAlwaysMirror() bool {
+	return v.DeliveryMode == providerEgressDeliveryAlwaysMirror
+}
+
 func providerEgressSettingFromRequest(req ProviderEgressSettingRequest, current providerEgressSettingValue) (providerEgressSettingValue, error) {
+	mode := strings.ToLower(strings.TrimSpace(req.DeliveryMode))
+	// 空串表示"这次没提交这个字段"，由下面的分支决定沿用还是取缺省；其它非两档值一律拒，
+	// 关着也拒——存进库的坏值不会因为总闸关着就无害。
+	if mode != "" && mode != providerEgressDeliveryInlineFirst && mode != providerEgressDeliveryAlwaysMirror {
+		return providerEgressSettingValue{}, BadAuthRequest("出站内镜的交付形态仅支持 inline_first 或 always_mirror")
+	}
 	// 除 enabled 外全为空的请求是"翻总闸"，不是"重填配置"：必须原样保留桶、前缀与密钥。
 	// 公开态从不回显 SecretKey，一旦关掉时清空，管理员再打开就必须手上有密钥原文。
 	// 关：不做完整性校验（就是要把一个可能已不可用的配置停掉）。
 	// 开：必须校验既有配置仍然完整，否则会凭空"启用"出一个一用就失败的内镜。
 	if providerEgressRequestOnlyToggles(req) {
 		preserved := normalizeProviderEgressSetting(current)
+		// 交付形态与总闸同为开关类字段：只提交其一不得清掉另一个，否则页面会静默改回缺省档。
+		if mode != "" {
+			preserved.DeliveryMode = mode
+		}
 		if !req.Enabled {
 			preserved.Enabled = false
 			return preserved, nil
@@ -347,6 +379,7 @@ func providerEgressSettingFromRequest(req ProviderEgressSettingRequest, current 
 	}
 	next := normalizeProviderEgressSetting(providerEgressSettingValue{
 		Enabled:         req.Enabled,
+		DeliveryMode:    mode,
 		Provider:        req.Provider,
 		Region:          req.Region,
 		Endpoint:        req.Endpoint,
@@ -459,6 +492,11 @@ func validateProviderEgressStorage(setting ossSettingValue) error {
 
 func normalizeProviderEgressSetting(value providerEgressSettingValue) providerEgressSettingValue {
 	value.Provider = strings.ToLower(strings.TrimSpace(value.Provider))
+	value.DeliveryMode = strings.ToLower(strings.TrimSpace(value.DeliveryMode))
+	// 缺字段一律按内联优先理解：升级前的旧记录没有这个键，读出来不能是"未知形态"。
+	if value.DeliveryMode == "" {
+		value.DeliveryMode = providerEgressDeliveryInlineFirst
+	}
 	value.Region = strings.TrimSpace(value.Region)
 	value.Endpoint = strings.TrimRight(strings.TrimSpace(value.Endpoint), "/")
 	value.Bucket = strings.TrimSpace(value.Bucket)
@@ -501,6 +539,7 @@ func providerEgressObjectPrefix(value providerEgressSettingValue) string {
 func publicProviderEgressSetting(setting *model.SystemSetting, value providerEgressSettingValue) PublicProviderEgressSetting {
 	result := PublicProviderEgressSetting{
 		Enabled:            value.Enabled,
+		DeliveryMode:       value.DeliveryMode,
 		Provider:           value.Provider,
 		Region:             value.Region,
 		Endpoint:           value.Endpoint,

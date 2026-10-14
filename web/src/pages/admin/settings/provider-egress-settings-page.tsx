@@ -5,12 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useBlocker } from "react-router";
 
 import { cn } from "@/lib/utils";
-import { clearAdminProviderEgressMappings, getAdminProviderEgressSetting, testAdminProviderEgressConnection, updateAdminProviderEgressSetting, type AdminProviderEgressSetting } from "@/services/api/auth";
+import { clearAdminProviderEgressMappings, getAdminProviderEgressSetting, testAdminProviderEgressConnection, updateAdminProviderEgressSetting, type AdminProviderEgressSetting, type ProviderEgressDeliveryMode } from "@/services/api/auth";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatusBadge, configuredSecretText, SettingsSectionCard } from "../components/admin-ui";
 
 type ProviderEgressForm = {
     enabled: boolean;
+    deliveryMode: ProviderEgressDeliveryMode;
     provider: string;
     region: string;
     endpoint: string;
@@ -22,7 +23,7 @@ type ProviderEgressForm = {
     cdnAuthMode: string;
 };
 
-type ProviderEgressPayload = Pick<AdminProviderEgressSetting, "enabled" | "provider" | "region" | "endpoint" | "bucket" | "accessKeyId" | "accessKeySecret" | "pathPrefix" | "cdnBaseUrl" | "cdnAuthMode">;
+type ProviderEgressPayload = Pick<AdminProviderEgressSetting, "enabled" | "deliveryMode" | "provider" | "region" | "endpoint" | "bucket" | "accessKeyId" | "accessKeySecret" | "pathPrefix" | "cdnBaseUrl" | "cdnAuthMode">;
 
 const providerOptions = [
     { value: "aliyun", label: "阿里云 OSS" },
@@ -35,6 +36,11 @@ const cdnModeOptions = [
     { value: "", label: "不使用 CDN（回源签名地址）" },
     { value: "public", label: "CDN 公有读（地址不带签名参数）" },
     { value: "qiniu", label: "CDN 七牛私有鉴权" },
+];
+
+const deliveryModeOptions: { value: ProviderEgressDeliveryMode; label: string }[] = [
+    { value: "inline_first", label: "内联优先（超出预算才镜像）" },
+    { value: "always_mirror", label: "全部镜像（一律先出桶）" },
 ];
 
 export default function ProviderEgressSettingsPage() {
@@ -278,6 +284,7 @@ export default function ProviderEgressSettingsPage() {
     const currentValues = watchedValues || form.getFieldsValue(true);
     const normalizedDraft = normalizePayload(currentValues);
     const draftEnabled = normalizedDraft.enabled;
+    const draftAlwaysMirror = normalizedDraft.deliveryMode === "always_mirror";
     const credentialsReady = prerequisitesReady(normalizedDraft, setting);
     const mappedCount = setting.mappedObjectCount ?? 0;
     const ttlHours = setting.expiresAfterHours ?? 0;
@@ -376,13 +383,13 @@ export default function ProviderEgressSettingsPage() {
                     <SettingsSectionCard
                         icon={<CloudUpload className="size-4" aria-hidden="true" />}
                         title="2. 是否启用出站内镜"
-                        description="上游接受 Base64 内联图片，所以预算内的本地参考图片直接内联交付；只有超出可内联上限的才需要这里的桶。"
+                        description="预算内的本地参考图片默认直接内联交付；只有超出可内联上限，或下面把交付形态选成“全部镜像”时，才会用到这里的桶。"
                         status={<AdminStatusBadge label={draftEnabled ? "已启用" : "已停用"} tone={draftEnabled ? "success" : "neutral"} />}
                     >
                         <div className="admin-egress-form-section">
                             <div className="flex flex-wrap items-center justify-between gap-4">
                                 <div>
-                                    <strong>镜像超出内联预算的参考图片</strong>
+                                    <strong>{draftAlwaysMirror ? "每张参考图片都先镜像到内镜桶" : "镜像超出内联预算的参考图片"}</strong>
                                     <p className="text-sm text-muted-foreground">关闭后，预算内的小图仍按 Base64 内联正常出图；只有超出可内联上限的图片会直接报“需要配置出站内镜”，不再静默下发上游取不到的内网地址。</p>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -392,8 +399,21 @@ export default function ProviderEgressSettingsPage() {
                                     </Form.Item>
                                 </div>
                             </div>
+                            <div className="flex flex-wrap items-center justify-between gap-4 pt-3">
+                                <div>
+                                    <strong>交付形态</strong>
+                                    <p className="text-sm text-muted-foreground">内联优先：预算内的参考图直接按 Base64 交给上游，超出才镜像。全部镜像：一律先上传到内镜桶再签公网地址，用于不收 Base64 内联图的渠道。</p>
+                                </div>
+                                <Form.Item name="deliveryMode" noStyle>
+                                    <Select className="w-60" aria-label="出站内镜交付形态" options={deliveryModeOptions} />
+                                </Form.Item>
+                            </div>
                             <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
-                                <li>可内联上限按上游契约留出余量；触发镜像时任务报错会写明本次图片合计字节与单张/合计上限。</li>
+                                <li>
+                                    {draftAlwaysMirror
+                                        ? "当前是全部镜像：内联预算不再参与判断，但单张 32 MB 与整批 96 MB 的硬顶仍然生效；桶未启用或未配置时任务直接失败并说明原因，不静默回落内联。"
+                                        : "可内联上限按上游契约留出余量；触发镜像时任务报错会写明本次图片合计字节与单张/合计上限。"}
+                                </li>
                                 <li>镜像出去的素材在厂商访问地址有效期内可被公网读取{ttlHours ? `（当前有效期 ${ttlHours} 小时）` : ""}。</li>
                                 <li>本期只交付图片素材（内联或镜像）；参考视频与参考音频仍要求上游可达地址。</li>
                             </ul>
@@ -424,6 +444,7 @@ export default function ProviderEgressSettingsPage() {
 function toFormValues(setting: AdminProviderEgressSetting): ProviderEgressForm {
     return {
         enabled: setting.enabled,
+        deliveryMode: setting.deliveryMode === "always_mirror" ? "always_mirror" : "inline_first",
         provider: setting.provider || "aliyun",
         region: setting.region || "",
         endpoint: setting.endpoint || "",
@@ -439,6 +460,7 @@ function toFormValues(setting: AdminProviderEgressSetting): ProviderEgressForm {
 function normalizePayload(values: Partial<ProviderEgressForm>): ProviderEgressPayload {
     return {
         enabled: Boolean(values.enabled),
+        deliveryMode: values.deliveryMode === "always_mirror" ? "always_mirror" : "inline_first",
         provider: values.provider?.trim() || "",
         region: values.region?.trim() || "",
         endpoint: values.endpoint?.trim() || "",

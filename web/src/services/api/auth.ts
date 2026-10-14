@@ -319,8 +319,11 @@ export type AdminArkPrivateAssetSetting = {
     updatedAt?: string;
 };
 
+export type ProviderEgressDeliveryMode = "inline_first" | "always_mirror";
+
 export type AdminProviderEgressSetting = {
     enabled: boolean;
+    deliveryMode?: ProviderEgressDeliveryMode;
     provider: string;
     region: string;
     endpoint: string;

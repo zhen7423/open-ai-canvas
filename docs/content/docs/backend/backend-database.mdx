@@ -319,7 +319,7 @@ schema v27 为 `channel_model_price_tiers` 和 `billing_orders` 添加 `cost_con
 | --- | --- | --- |
 | `provider_egress_objects` | 记录"本地素材送往公网渠道"时因超出内联预算而镜像出去的那份对象；预算内的图片走 Base64 内联，不落本表 | `(user_id, content_sha256, provider, bucket, delivery_revision)` 唯一；`endpoint`、`mime_type`、`size_bytes`、`resource_id`、`cdn_mode` 为审计列 |
 
-素材存放在服务器本地、而渠道要求参考素材能被上游直接取回时（例如秘塔 MiniMax H3 这类 `requiresPublicMediaUrls` 协议），后端在生成前决定交付形态：上游协议本身接受 `data:image/<小写格式>;base64,<Base64>`，所以单张 30 MB、单次请求图片合计 40 MB（编码后约 53 MB）以内的直接内联，不产生任何表记录；超出预算的才镜像一份到管理员单独配置的"出站内镜"桶，再把签出的公网地址交给上游。内联字节只在 worker 内存里生成、只进当次上游请求，不写回任务记录。主存储位置不受影响：该配置是独立的系统设置 `provider_egress`，与决定新上传落点的 `oss` 设置刻意分离。
+素材存放在服务器本地、而渠道要求参考素材能被上游直接取回时（例如秘塔 MiniMax H3 这类 `requiresPublicMediaUrls` 协议），后端在生成前决定交付形态：上游协议本身接受 `data:image/<小写格式>;base64,<Base64>`，所以单张 30 MB、单次请求图片合计 40 MB（编码后约 53 MB）以内的直接内联，不产生任何表记录；超出预算的才镜像一份到管理员单独配置的"出站内镜"桶，再把签出的公网地址交给上游。内联字节只在 worker 内存里生成、只进当次上游请求，不写回任务记录。主存储位置不受影响：该配置是独立的系统设置 `provider_egress`，与决定新上传落点的 `oss` 设置刻意分离。交付形态是同一份设置里的 `deliveryMode` 字段（`inline_first` / `always_mirror`），随 JSON 存进 `system_settings`，不新增表或列、不动 Schema 版本；缺该键的旧记录按 `inline_first` 理解。选 `always_mirror` 时预算内的图片也会落一行台账，因为它的字节确实进了桶。
 
 复用按内容指纹判定，因此 `content_sha256` 是镜像字节实算的 SHA-256，不是资源 ETag。`delivery_revision` 取存储与分发配置的摘要：换桶、改凭据或改 CDN 方式后旧行不再参与复用，避免把旧桶的对象键拼成新桶的域名。唯一索引是 `(user_id, content_sha256, provider, bucket, delivery_revision)`；列名用显式 `column:` 标签固定为 `content_sha256`、`cdn_mode`，不依赖 GORM 默认命名。建表登记按「结构迁移与版本」一节要求覆盖三处（`Models()`、`migrations.go` 的 `version: 55`、`cmd/migrate-sqlite-postgres` 的 `migrations()`）。并发首次上传撞唯一索引时读回已有行复用其对象键，不报错、不重复上传。
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1318,5 +1319,109 @@ func TestPreparePublicEgressImageMissingFileHidesServerPath(t *testing.T) {
 	}
 	if input.ReferenceImages[0].URL != "http://192.168.1.167:1888/x" || input.ReferenceImages[0].DataURL != "" {
 		t.Fatal("失败路径不得改写地址或留下内联数据")
+	}
+}
+
+// setProviderEgressDeliveryModeRaw 直接改写 provider_egress 的 JSON，绕开保存接口：
+// 既能造"旧库根本没有这个键"的形态，也让交付形态的行为测试不依赖 PATCH 语义。mode 传空串表示删掉该键。
+func setProviderEgressDeliveryModeRaw(t *testing.T, svc *Service, mode string) {
+	t.Helper()
+	setting, err := svc.repo.SystemSetting(providerEgressSettingKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(setting.ValueJSON), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if mode == "" {
+		delete(fields, "deliveryMode")
+	} else {
+		fields["deliveryMode"] = mode
+	}
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setting.ValueJSON = string(encoded)
+	if err := svc.repo.SaveSystemSetting(setting); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProviderEgressAlwaysMirrorModeMirrorsImageWithinInlineBudget(t *testing.T) {
+	svc, dataDir := newProviderEgressTestService(t)
+	configureProviderEgress(t, svc)
+	setProviderEgressDeliveryModeRaw(t, svc, providerEgressDeliveryAlwaysMirror)
+	t.Setenv("CANVAS_PUBLIC_BASE_URL", "http://192.168.1.167:1888")
+	probe := captureEgressUploads(t, "https://yingce-egress.oss-cn-beijing.aliyuncs.com/canvas/egress/user-1/small.png")
+	// 64KB 远在 30MB / 40MB 内联预算之内：这条锁的就是"交付形态压过预算判断"。
+	seedSizedImage(t, svc, dataDir, "res-small", "user-1", 'A', 64*1024, "image/png")
+
+	input := videoEgressInput("res-small", "http://192.168.1.167:1888/api/public/resources/res-small/file?expires=1&signature=abc")
+	if err := svc.preparePublicEgressImageReferences("user-1", &input, requireURLNeed()); err != nil {
+		t.Fatal(err)
+	}
+	media := input.ReferenceImages[0]
+	if media.DataURL != "" {
+		t.Fatalf("全部镜像档不得内联，却留下 %d 字节的 data URI", len(media.DataURL))
+	}
+	if !strings.HasPrefix(media.URL, "https://yingce-egress.") || !strings.Contains(media.URL, "?sig=mock") {
+		t.Fatalf("交付地址不是内镜桶签出的公网地址：%q", media.URL)
+	}
+	if len(probe.objectKeys) != 1 {
+		t.Fatalf("PUT 次数 = %d, want 1：%#v", len(probe.objectKeys), probe.objectKeys)
+	}
+	count, err := svc.repo.ProviderEgressObjectCount()
+	if err != nil || count != 1 {
+		t.Fatalf("台账行数 = %d, err = %v", count, err)
+	}
+}
+
+func TestProviderEgressAlwaysMirrorModeReportsSwitchWithoutClaimingBudget(t *testing.T) {
+	svc, dataDir := newProviderEgressTestService(t)
+	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
+	configureProviderEgress(t, svc)
+	if _, err := svc.UpdateProviderEgressSetting(admin, ProviderEgressSettingRequest{Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	setProviderEgressDeliveryModeRaw(t, svc, providerEgressDeliveryAlwaysMirror)
+	t.Setenv("CANVAS_PUBLIC_BASE_URL", "http://192.168.1.167:1888")
+	probe := captureEgressUploads(t, "https://yingce-egress.oss-cn-beijing.aliyuncs.com/canvas/egress/user-1/small.png")
+	seedSizedImage(t, svc, dataDir, "res-small", "user-1", 'A', 64*1024, "image/png")
+
+	input := videoEgressInput("res-small", "http://192.168.1.167:1888/api/public/resources/res-small/file?expires=1&signature=abc")
+	err := svc.preparePublicEgressImageReferences("user-1", &input, requireURLNeed())
+	if err == nil {
+		t.Fatal("总闸关闭时全部镜像必须失败，不得静默回落内联")
+	}
+	if strings.Contains(err.Error(), "超过可内联的上限") {
+		t.Fatalf("全部镜像档不存在“超出预算”这回事，文案不该这么写：%v", err)
+	}
+	if !strings.Contains(err.Error(), "全部镜像") {
+		t.Fatalf("失败原因要指向交付形态选择：%v", err)
+	}
+	if len(probe.objectKeys) != 0 || input.ReferenceImages[0].DataURL != "" {
+		t.Fatal("失败路径不得上传对象，也不得留下内联数据")
+	}
+}
+
+// 守护锁：always_mirror 只改"要不要内联"，不得顺手绕过单张 32MB 读顶。
+// 它在实现前后都该是绿的，作用是拦住以后把新模式做成"跳过所有闸"的改法。
+func TestProviderEgressAlwaysMirrorModeStillEnforcesPerImageCap(t *testing.T) {
+	svc, dataDir := newProviderEgressTestService(t)
+	configureProviderEgress(t, svc)
+	setProviderEgressDeliveryModeRaw(t, svc, providerEgressDeliveryAlwaysMirror)
+	t.Setenv("CANVAS_PUBLIC_BASE_URL", "http://192.168.1.167:1888")
+	probe := captureEgressUploads(t, "https://yingce-egress.oss-cn-beijing.aliyuncs.com/canvas/egress/user-1/big.png")
+	seedSizedImage(t, svc, dataDir, "res-big", "user-1", 'B', int(providerEgressMaxImageBytes)+1, "image/png")
+
+	input := videoEgressInput("res-big", "http://192.168.1.167:1888/api/public/resources/res-big/file?expires=1&signature=abc")
+	err := svc.preparePublicEgressImageReferences("user-1", &input, requireURLNeed())
+	if err == nil || !strings.Contains(err.Error(), "超过出站内镜单张上限") {
+		t.Fatalf("超单张硬顶必须仍被拒：%v", err)
+	}
+	if len(probe.objectKeys) != 0 {
+		t.Fatalf("被硬顶挡下时不得上传：%#v", probe.objectKeys)
 	}
 }

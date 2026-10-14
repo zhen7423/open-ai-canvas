@@ -412,3 +412,19 @@ test("provider egress settings inset every section body like its sibling pages",
     expect(css).toContain(".admin-ark-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; padding: 18px 20px 4px;");
     expect(css).toContain(".admin-storage-form-section { padding: 18px 20px 4px; }");
 });
+
+test("provider egress settings carry the delivery form switch beside the master toggle", async () => {
+    const [pageSource, apiSource] = await Promise.all([Bun.file(new URL("../src/pages/admin/settings/provider-egress-settings-page.tsx", import.meta.url)).text(), Bun.file(new URL("../src/services/api/auth.ts", import.meta.url)).text()]);
+    const page = compactSource(pageSource);
+
+    expect(apiSource).toContain('export type ProviderEgressDeliveryMode = "inline_first" | "always_mirror";');
+    expect(apiSource).toContain("deliveryMode?: ProviderEgressDeliveryMode;");
+    expect(page).toContain('name="deliveryMode"');
+    expect(page).toContain('{ value: "always_mirror", label: "全部镜像（一律先出桶）" }');
+    // 保存正文里必须恒有一个合法档位：留空会让后端按"这次没提交"处理，页面就可能静默停在旧档。
+    expect(page).toContain('deliveryMode: values.deliveryMode === "always_mirror" ? "always_mirror" : "inline_first"');
+    // 全部镜像档要写明硬顶仍在，免得管理员以为选了就不限大小。
+    expect(page).toContain("单张 32 MB 与整批 96 MB 的硬顶仍然生效");
+    // 总闸那行标题要跟着档位走，否则"只镜像超出预算的图"会在全部镜像档下说反话。
+    expect(page).toContain('draftAlwaysMirror ? "每张参考图片都先镜像到内镜桶" : "镜像超出内联预算的参考图片"');
+});

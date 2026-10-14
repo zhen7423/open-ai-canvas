@@ -153,14 +153,20 @@ func (s *Service) preparePublicEgressImageReferences(userID string, input *canva
 		return nil
 	}
 
-	if maxSingle <= providerEgressMaxInlineImageBytes && totalBytes <= providerEgressMaxInlineTotalBytes {
+	// 交付形态与"能不能出桶"取自同一次读取，免得一次任务里模式来自新快照、配置来自旧快照。
+	_, value, err := s.readProviderEgressSetting()
+	if err != nil {
+		return err
+	}
+	if !value.providerEgressAlwaysMirror() && maxSingle <= providerEgressMaxInlineImageBytes && totalBytes <= providerEgressMaxInlineTotalBytes {
 		for _, target := range targets {
 			applyProviderEgressInlineData(target.media, target.payload)
 		}
 		return nil
 	}
-	// 超出内联预算才需要公网地址：读取已经在上面完成，这里只做镜像与改写。
-	return s.mirrorProviderEgressImages(userID, targets, requirement.reason)
+	// 走到这里说明需要公网地址：要么超出内联预算，要么管理员选了"全部镜像"。
+	// 读取已经在上面完成，这里只做镜像与改写。
+	return s.mirrorProviderEgressImages(value, userID, targets, requirement.reason)
 }
 
 // applyProviderEgressInlineData 把素材以内联 data URI 交给上游。
@@ -178,20 +184,17 @@ func applyProviderEgressInlineData(media *providerMedia, payload providerEgressP
 
 // mirrorProviderEgressImages 是超出内联预算时的兜底：镜像到出站内镜桶并改写为公网地址。
 // 桶未启用或不可用时明确失败，不静默回退成上游取不到的内网地址。
-func (s *Service) mirrorProviderEgressImages(userID string, targets []providerEgressTarget, reason string) error {
+func (s *Service) mirrorProviderEgressImages(value providerEgressSettingValue, userID string, targets []providerEgressTarget, reason string) error {
 	var totalBytes int64
 	for _, target := range targets {
 		totalBytes += target.payload.size
 	}
-	setting, enabled, err := s.activeProviderEgressSetting()
+	setting, enabled, err := s.activeProviderEgressFromValue(value)
 	if err != nil {
 		return err
 	}
 	if !enabled {
-		return BadAuthRequest(fmt.Sprintf(
-			"参考图片合计 %d 字节，超过可内联的上限（单张 %d 字节 / 合计 %d 字节），需要启用出站内镜换公网地址；当前渠道要求素材可取回（%s），但后台未启用或未配置出站内镜",
-			totalBytes, providerEgressMaxInlineImageBytes, providerEgressMaxInlineTotalBytes,
-			defaultString(strings.TrimSpace(reason), "渠道要求素材可取回")))
+		return BadAuthRequest(providerEgressMirrorDisabledMessage(value, totalBytes, reason))
 	}
 	for _, target := range targets {
 		objectKey, err := s.storeProviderEgressImage(setting, userID, target.resourceID, target.payload)
@@ -211,6 +214,20 @@ func (s *Service) mirrorProviderEgressImages(userID string, targets []providerEg
 		target.media.DurationMs = target.payload.durationMs
 	}
 	return nil
+}
+
+// providerEgressMirrorDisabledMessage 按交付形态说清"为什么这次必须出桶"：内联优先档是预算被超出，
+// 全部镜像档是管理员选了强制出桶。把后者也说成"超过可内联的上限"会把运维指向错误的旋钮。
+func providerEgressMirrorDisabledMessage(value providerEgressSettingValue, totalBytes int64, reason string) string {
+	if value.providerEgressAlwaysMirror() {
+		return fmt.Sprintf(
+			"参考图片需按后台选定的“全部镜像”交付形态换成公网地址（本次合计 %d 字节），当前渠道要求素材可取回（%s），但后台未启用或未配置出站内镜",
+			totalBytes, defaultString(strings.TrimSpace(reason), "渠道要求素材可取回"))
+	}
+	return fmt.Sprintf(
+		"参考图片合计 %d 字节，超过可内联的上限（单张 %d 字节 / 合计 %d 字节），需要启用出站内镜换公网地址；当前渠道要求素材可取回（%s），但后台未启用或未配置出站内镜",
+		totalBytes, providerEgressMaxInlineImageBytes, providerEgressMaxInlineTotalBytes,
+		defaultString(strings.TrimSpace(reason), "渠道要求素材可取回"))
 }
 
 // providerEgressUpstreamIsPrivate 判断渠道地址是否本身就在地网。BaseURL 为空（由系统渠道 ID 稍后解析）
