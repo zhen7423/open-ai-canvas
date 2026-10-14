@@ -1,1 +1,4 @@
 plugin-packages/*.sh text eol=lf
+# 内置技能包的脚本树有完整性基线哈希（backend/internal/skills/skills_yingshi_builtin_test.go），
+# 按 LF 计算；不锁行尾时 Windows 的 core.autocrlf 会检出成 CRLF，让该测试在本地必假红。
+backend/builtin/**/*.py text eol=lf
