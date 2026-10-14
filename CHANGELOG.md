@@ -6,7 +6,8 @@
 - 修复服务端出站 URL 对 DNS 解析结果的私网 IP 拦截被注释的问题，恢复对环回、内网和链路本地地址的拒绝，避免 SSRF。
 - 修复 Quality checks 中工作台测试模块路径、懒加载画布路由合同、模型促销标签和影视剧作工坊完整性基线问题。
 - 正式镜像包含影视剧作工坊内置 Skill；服务启动时同步技能目录、版本和文件记录，并保留用户加入/收藏状态。
-- 升级注意：数据库 Schema 为 v54；生产 Compose 的 `migrate` 服务会在 Backend 启动前执行 `migrate-schema up`，旧 v51 工作台账本会自动兼容升级，无需手工修改 `schema_migrations`。
+- 升级注意：上游数据库 Schema 为 v54，本仓库分支为 **v55**（在此之上追加「本参图片出站内镜」台账 `provider_egress_objects`）。生产 Compose 的 `migrate` 服务会在 Backend 启动前执行 `migrate-schema up`，旧 v51 工作台账本会自动兼容升级，无需手工修改 `schema_migrations`。
+- 本仓库分支另加迁移器 `normalizeLegacyProviderEgressMigration`：本特性早期曾在版本 51 登记 `provider_egress_objects`，与上游的 `personal_profile_security` 同号；仅当该记录的名称与旧校验和精确匹配、其上无更高迁移记录且出站内镜表完整时，在同一事务把这条已应用记录改写到 v55 并保留原应用时间，其余情况仍拒绝启动。已按 v51 登记过的库因此无需手工改账本。
 
 ## v1.6.6.1
 

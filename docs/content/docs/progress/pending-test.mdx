@@ -3095,6 +3095,6 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 ## 合并上游 v1.6.6～v1.6.7
 
 - 已合并：`upstream/main` 的 8 个提交（个人资料与登录日志、系统头像预设、生图与视频独立工作台、影视剧作工坊内置 Skill、系统模型「拉取模型」搜索、创作页提交门禁、画布节点可选字段基线、出站 URL 恢复私网拦截）。数据库结构版本由 51 抬到 55。
-- [ ] 线上 SQLite 目前停在「51 = provider_egress_objects」，部署新镜像前需在备份之后执行 `migrate-schema up`，确认该条被自动改写为 55、51–54 顺利应用、`migrate-schema verify` 通过；本轮未在真实库执行，属部署侧验收。
+- [x] 线上 SQLite 已升级并实测归一化生效（2026-10-14 00:38，LAN 栈）：`docker compose -f docker-compose.lan.yml --env-file .env.lan build` → 停 backend → 备份卷内 `pre-upstream-55-20261014T003759Z/open_ai_canvas.db`（优雅停止时 `-wal`/`-shm` 已 checkpoint，单个 `.db` 就是一致快照）→ `up -d`。LAN 编排没有独立 `migrate` 服务，迁移由后端启动时的 `CANVAS_AUTO_MIGRATE`（缺省 true）执行。升级前实测 `MAX(version)=51` 且 51 = `provider_egress_objects`；升级后 51–54 由上游四项新迁移于 00:38:37 建表（`user_avatars`、`login_logs`、`workbench_tools`、`workbench_presets`），**55 那条的 `applied_at` 仍是 2026-10-12 01:14:32**，证明账本被改写而不是重放，`provider_egress_objects` 表与数据保留，迁移行 50→54；`/api/health/ready` 报 `build.version=v1.6.7`、`schema current=55 expected=55 ready=true`，容器内 `migrate-schema verify` 退出 0，启动日志无 error/panic（只有一条 `billing review audit stale_orders=10` 的历史告警，最旧 2026-10-10，与本次无关）。**回退注意**：上游不提供降级迁移，旧二进制的 `CurrentSchemaVersion=51` 会因"数据库结构版本 55 高于程序支持的 51"拒绝启动，回退必须连库一起从备份恢复，不能只换镜像。
 - [ ] 上游恢复的出站私网拦截与本特性的公网性判据同读 `backend/internal/outbound`，需回归确认内镜桶地址仍被判为公网可交付、内网端点仍被拒。
 - [ ] 前端路由与管理端侧栏由上游重构（工作台新页面与懒加载画布路由合同），出站内镜设置页入口需重新在浏览器验收一次。
