@@ -178,7 +178,11 @@ func (p *streamingAgentParser) consumeChatCompletionEvent(payload map[string]int
 				current.id = id
 				p.toolCallByID[id] = index
 			}
-			if name := stringField(function, "name"); name != "" {
+			if name := stringField(function, "name"); name != "" && current.name != name {
+				// OpenAI 约定 name 只在首个分片给一次；部分中转会在每个分片重发完整 name，
+				// 无条件追加会拼出 canvas_get_statecanvas_get_state 这种非法工具名，
+				// 运行时把它判成"结构类无效调用"整步拒绝，表现为 Agent 直接中断。
+				// 这里只挡"整片原样重复"，真正分片续写（canvas_ + get_state）仍照旧拼接。
 				current.name += name
 			}
 			current.arguments += stringField(function, "arguments")

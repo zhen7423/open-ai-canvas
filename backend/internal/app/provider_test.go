@@ -3137,3 +3137,64 @@ func TestRunMiniMaxVideoTaskReturnsFailureReason(t *testing.T) {
 		t.Fatalf("runVideoTask() error = %v", err)
 	}
 }
+
+// 部分中转渠道在每个 SSE 分片里都重发完整 function.name，而不是按 OpenAI 约定只在首片给一次。
+// 无条件追加会拼出 canvas_get_statecanvas_get_state... 这种非法工具名，运行时会把它判成
+// "结构类无效调用"整步拒绝（invalid Pi tool calls），前端只看到 Agent 中断。
+func TestStreamingAgentParserIgnoresRepeatedToolCallNameFragments(t *testing.T) {
+	parser := newStreamingAgentParser("chat-completion", nil)
+	stream := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"canvas_get_state","arguments":"{\"nodeIds\":[\""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"canvas_get_state","arguments":"n1\""}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"canvas_get_state","arguments":"]}"}}]}}]}
+
+data: [DONE]
+
+`
+	parser.consume("text/event-stream", []byte(stream))
+	parser.flush()
+	result, err := parser.result()
+	if err != nil {
+		t.Fatalf("streamingAgentParser.result() error = %v", err)
+	}
+	calls, _ := result["toolCalls"].([]interface{})
+	if len(calls) != 1 {
+		t.Fatalf("tool calls = %#v", result["toolCalls"])
+	}
+	call, _ := calls[0].(map[string]interface{})
+	function, _ := call["function"].(map[string]interface{})
+	if function["name"] != "canvas_get_state" {
+		t.Fatalf("重复发送的工具名被拼进了结果：%v", function["name"])
+	}
+	if function["arguments"] != `{"nodeIds":["n1"]}` {
+		t.Fatalf("参数分片拼接被改坏：%v", function["arguments"])
+	}
+	if call["id"] != "call-1" {
+		t.Fatalf("工具调用 ID = %#v", call)
+	}
+}
+
+// 去重不能做成"只取首片"：真正分片续写的工具名（"canvas_" + "get_state"）必须照旧拼回来。
+func TestStreamingAgentParserStillJoinsSplitToolCallName(t *testing.T) {
+	parser := newStreamingAgentParser("chat-completion", nil)
+	stream := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-2","function":{"name":"canvas_","arguments":"{}"}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"get_state"}}]}}]}
+
+data: [DONE]
+
+`
+	parser.consume("text/event-stream", []byte(stream))
+	parser.flush()
+	result, err := parser.result()
+	if err != nil {
+		t.Fatalf("streamingAgentParser.result() error = %v", err)
+	}
+	calls, _ := result["toolCalls"].([]interface{})
+	call, _ := calls[0].(map[string]interface{})
+	function, _ := call["function"].(map[string]interface{})
+	if function["name"] != "canvas_get_state" {
+		t.Fatalf("分片续写的工具名应拼回 canvas_get_state，实际 %v", function["name"])
+	}
+}
