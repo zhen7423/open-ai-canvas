@@ -5,6 +5,54 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## PR 合并后的质量检查修复
+
+- 已修复：服务商目录向导及相邻测试的四处格式问题；保留既有 UI 和业务行为，不放宽 Actions 检查规则。
+- 已验证：冻结依赖安装、以前次发布为基线的格式检查、Typecheck、UI lint、前端全量测试（2350 项）与生产构建通过。
+- 已处理：保留服务商目录的 v55 迁移，将 SQL 性能优化迁移顺延为 v56；补充版本递增、旧时间戳回填及目录迁移记录不变的回归测试。
+- 已修复：手动驱动 Agent 媒体清理的测试先关闭异步媒体等待器，避免其与故意损坏执行状态的测试步骤争抢版本号；不修改产品执行行为。
+- [ ] 用户验收：合并后的 Agent 媒体审批尺寸复核、错误信息脱敏与 SQL 查询性能；专项测试不代替真实模型调用或生产升级验收。
+
+## 豆包音频内置技能分类修复
+
+- 豆包音频提示词改归现有“创意设计”分类，修复 `audio` 非法分类导致启动时加载内置技能失败。
+- 已通过内置技能加载、预设目录及技能接口回归测试；待确认正常启动后技能广场可见且分类正确。
+
+## 服务商目录与一键接入
+
+- 部署 ai.yingce.tv 静态目录（`scripts/provider-catalog/`）后，后台「系统渠道 → 新增渠道」能看到目录卡片、标签筛选、推广期。
+- 推广期结束的服务商不再出现在目录，已接入渠道继续可用且无提示。
+- 填 Key 验证成功后进入定价页，上游缺失的模型被标灰；跳过验证创建的渠道默认停用。
+- 一键接入后渠道、模型、规格档成本与售价正确（售价 = 成本 × (1 + 加价率)），渠道详情显示来源。
+- 统一调价弹窗改为加价率口径，模型列表显示“加价”。
+- 目录不可用、离线缓存、明暗主题、窄屏下的布局。
+
+## SQL 慢查询性能优化
+
+- 已实现：修复 SQLite 下 `whereTimeRange` 的 `unixepoch(created_at)` 包裹列导致索引失效；`ApiCallLog` 与 `Task` 新增 `CreatedAtEpoch` 列（`BeforeCreate` 从 `CreatedAt` 派生 Unix epoch）及 `idx_*_created_epoch` 索引，时间范围查询改走 epoch 裸列，migration v56 回填既有行。新增 `api_call_logs` 的 `(request_kind, status, created_at)` 和 `credit_ledger_entries` 的 `(user_id, type)` 复合索引。
+- 已实现：钱包 `CreditAccount` 改为先读后写，消除读路径上的写操作；`creditPolicy` 加 5 分钟 TTL 缓存，更新策略时失效。资源删除校验对 tasks/task_logs 大 JSON 加 LIKE 过滤（≤100 个资源 ID 时），避免全量拉取。模型目录可用性从 7 天趋势数据导出最近结果，消除第二次全表扫描并加 30 秒 TTL 缓存。
+- [x] 后端 `go test ./internal/database/ ./internal/model/ ./internal/repository/ ./internal/app/` 通过（`internal/app` 的 4 个 TempDir 清理失败为 Windows 预存问题，与本改动无关）。
+- [ ] 启动 SQLite 后端，访问 `GET /api/model-catalog`（原 11.8s）和 `GET /api/wallet`（原 2.5s），确认 `sql slow` 日志消失或显著减少。
+- [ ] 验证 migration v56 在空库和有数据的库上均成功执行；PostgreSQL 部署行为不变。
+
+## 画布豆包音频节点参数与提示词说明
+
+- 已实现：音频节点参数面板可输入或清空豆包音色 ID；增加折叠的提示词写法、参考音频编号与正常语速说明，不新增当前协议未映射的语言、方言、声音指令控件。
+- 已修正：空语速按 1x 显示；前端节点配置、生成合同编辑与提交保留明确的空音色，不再重新继承全局音色。仅缺失字段时继承全局值。
+- 已纠正：本次新增豆包提示词技能限定为当前实现的写法建议，删除未经核实的模型、音色数量及独立声音指令支持声明；撤回本次先前未经完整验证的 Agent 后端参数改动。
+- 已验证：音频专项测试 8 项通过（含真实面板服务端渲染、空语速、清空音色的规格往返）；前端类型检查与 `git diff --check` 通过。未启动开发服务，未做浏览器验收。
+- [ ] 真实画布验收：明暗主题打开音频节点参数，输入音色、清空、关闭重开并保存刷新，确认不回填全局音色；格式、语速与提示词入口正常。
+- [ ] 真实渠道验收：相同台词与音色在 1x 下生成短样，对照提示词有无“缓慢/长停顿”；检查实际任务参数、播放器倍速及音频采样率。未调用供应商，不能将本次改动宣称为听感变慢问题的根因修复。
+
+## Agent 图片生成参数与运行时校验回执
+
+- 已实现：模型目录给出生成工具字段模板，图片分辨率字段与已有执行合同对齐；SDK 参数拒绝回填工具失败事件和调用游标。
+- 已检查：Node 语法、Git 空白差异；本次未新增或运行测试套件。
+- [x] 在 v1.6.8.3 基线上完成 ARM64 后端构建和配套 Agent 镜像运行验证，独立空数据预览及实际部署 schema54 ready。
+- [x] 用户批准后，以真实四张参考、gpt-image-2、16:9 / 2K / high 完成一次图片生成，结果 2752×1536；原节点回写成功，账单实际结算与批准金额一致。
+- 已修复：审批后的精确像素与能力层比例表示不同，复核时接受匹配同一解析结果的像素值。
+- [ ] 未单独制造 SDK 非法参数验证恢复路径；未验证其他线路、比例档位或视频生成。
+
 ## 图片尺寸与分辨率配置顺序
 
 - 已修复：尺寸与分辨率开关统一更新能力配置，任意顺序启用时都会初始化缺失档位；新增档位继承已选比例（含自定义比例与已有像素预设的比例），不再固定缩减为常用六项。没有已有比例时仍使用常用比例，并遵守插件支持范围。
@@ -3179,3 +3227,12 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - [x] 线上 SQLite 已升级并实测归一化生效（2026-10-14 00:38，LAN 栈）：`docker compose -f docker-compose.lan.yml --env-file .env.lan build` → 停 backend → 备份卷内 `pre-upstream-55-20261014T003759Z/open_ai_canvas.db`（优雅停止时 `-wal`/`-shm` 已 checkpoint，单个 `.db` 就是一致快照）→ `up -d`。LAN 编排没有独立 `migrate` 服务，迁移由后端启动时的 `CANVAS_AUTO_MIGRATE`（缺省 true）执行。升级前实测 `MAX(version)=51` 且 51 = `provider_egress_objects`；升级后 51–54 由上游四项新迁移于 00:38:37 建表（`user_avatars`、`login_logs`、`workbench_tools`、`workbench_presets`），**55 那条的 `applied_at` 仍是 2026-10-12 01:14:32**，证明账本被改写而不是重放，`provider_egress_objects` 表与数据保留，迁移行 50→54；`/api/health/ready` 报 `build.version=v1.6.7`、`schema current=55 expected=55 ready=true`，容器内 `migrate-schema verify` 退出 0，启动日志无 error/panic（只有一条 `billing review audit stale_orders=10` 的历史告警，最旧 2026-10-10，与本次无关）。**回退注意**：上游不提供降级迁移，旧二进制的 `CurrentSchemaVersion=51` 会因"数据库结构版本 55 高于程序支持的 51"拒绝启动，回退必须连库一起从备份恢复，不能只换镜像。
 - [ ] 上游恢复的出站私网拦截与本特性的公网性判据同读 `backend/internal/outbound`，需回归确认内镜桶地址仍被判为公网可交付、内网端点仍被拒。
 - [ ] 前端路由与管理端侧栏由上游重构（工作台新页面与懒加载画布路由合同），出站内镜设置页入口需重新在浏览器验收一次。
+
+## 合并上游 v1.6.8.4
+
+- 已合并：`upstream/main` 的 12 个提交（远程服务商目录与秘塔一键接入、Agent 媒体审批改规格返回 400、异步图片任务超时后继续回查并合并轮询日志、素材库分页多选与跨页批量、画布保存冲突与豆包音频节点参数、可美 Seedream 5.0 声明式参数与 1.5K 档位、SQLite 时间戳索引与慢查询优化、上游地址脱敏、v1.6.8.4 发布）。
+- 已完成：出站内镜台账从 v55 让位到 **v57**（上游 v1.6.8.4 把 55 用作 `provider_catalog_source`、56 用作 `sql_perf_indexes`）。`normalizeLegacyProviderEgressMigration` 改为遍历 51、55 两个旧身份，逐个核对名称与校验和、其上无更高迁移记录且出站内镜表完整后，在同一事务把这条已应用记录改写到 57 并保留原应用时间；上游正常占用 55/56 的库不会被误改写。
+- [x] 红→绿证据：新增 `TestMigrateSchemaNormalizesStaleProviderEgressMigrationV55`。实现前失败原文为「数据库迁移 55 名称不一致：记录为 provider_egress_objects，程序期望 provider_catalog_source」，与线上库实测状态一致（`schema_migrations` 最大版本 55，名称 `provider_egress_objects`，校验和 `sha256:provider-egress-objects-v55-20261013`，`applied_at` 2026-10-12 01:14:32）；实现后 `go test -count=1 ./internal/database/` 整包 ok（7.714s）。
+- [ ] LAN 库 55→57 改写实测：先用新镜像对生产库副本跑 `migrate-schema up` 与 `verify`，核对升级后 55 = `provider_catalog_source`、56 = `sql_perf_indexes`、57 = `provider_egress_objects`，且 57 的 `applied_at` 仍是 2026-10-12 01:14:32（改写而非重放），`provider_egress_objects` 行数不变。
+- [ ] 回退注意：上游不提供降级迁移。旧二进制的 `CurrentSchemaVersion=55` 会因「数据库结构版本 57 高于程序支持的 55」拒绝启动，回退必须连库一起从卷内备份恢复，不能只换镜像。
+- [ ] 服务商目录新列（`model_channels.catalog_provider_id`、`channel_models.catalog_model_key`）与本分支渠道编辑表单共存需在管理端回归一次：一键接入向导写入的目录来源字段不应被渠道保存请求覆盖掉。

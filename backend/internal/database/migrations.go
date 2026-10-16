@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 55
+const CurrentSchemaVersion int64 = 57
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -33,10 +33,14 @@ const workbenchToolsMigrationName = "workbench_tools_and_presets"
 const workbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v54-20261014"
 const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v51-20261014"
 const providerEgressMigrationName = "provider_egress_objects"
-const providerEgressMigrationVersion int64 = 55
-const providerEgressMigrationChecksum = "sha256:provider-egress-objects-v55-20261013"
+const providerEgressMigrationVersion int64 = 57
+const providerEgressMigrationChecksum = "sha256:provider-egress-objects-v57-20261016"
 const legacyProviderEgressMigrationVersion int64 = 51
 const legacyProviderEgressMigrationChecksum = "sha256:provider-egress-objects-v51-20261011"
+// 上游 v1.6.8.4 把 55 用作 provider_catalog_source、56 用作 sql_perf_indexes，本分支的
+// 出站内镜台账要从 55 再让位到 57；已按 55 应用过的库需要改写这条旧身份记录。
+const staleProviderEgressMigrationVersion int64 = 55
+const staleProviderEgressMigrationChecksum = "sha256:provider-egress-objects-v55-20261013"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -189,10 +193,21 @@ var schemaMigrations = []migration{
 	{version: 54, name: workbenchToolsMigrationName, checksum: workbenchToolsMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.WorkbenchTool{}, &model.WorkbenchPreset{}, &model.Task{})
 	}},
-	// 内镜台账原本登记在 51，合并时让开上游的 personal_profile_security 挪到 55。
-	// 55 必须排在列表最后——TestCurrentSchemaVersionMatchesMigrationPlan 是拿
-	// CurrentSchemaVersion 与计划末项比对的，顺序反了直接红。旧库留在 51 的那条
-	// 记录由 normalizeLegacyProviderEgressMigration 归一化，不要求手工改账本。
+	{version: 55, name: "provider_catalog_source", checksum: "sha256:provider-catalog-source-v55", apply: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(&model.ModelChannel{}, "CatalogProviderID") {
+			if err := tx.Migrator().AddColumn(&model.ModelChannel{}, "CatalogProviderID"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.ChannelModel{}, "CatalogModelKey") {
+			return tx.Migrator().AddColumn(&model.ChannelModel{}, "CatalogModelKey")
+		}
+		return nil
+	}},
+	{version: 56, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v56-20261016", apply: migrateSchemaV56},
+	// 本仓库分支的出站内镜台账：先后登记在 51、55，两次都因为上游占用同号而让位，
+	// 现在排在计划末项 57。旧账本由 normalizeLegacyProviderEgressMigration 改写，
+	// 不要求手工改 schema_migrations。
 	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.ProviderEgressObject{})
 	}},
@@ -566,31 +581,65 @@ func normalizeLegacyWorkbenchMigration(tx *gorm.DB) error {
 
 const workbenchToolsMigrationVersion int64 = 54
 
-// normalizeLegacyProviderEgressMigration 处理本仓库特性分支留下的账本：出站内镜台账
-// 曾登记在版本 51，而合并后的上游把 51 用作 personal_profile_security，同号会让启动
-// 校验直接失败。仅在版本 51 精确等于旧内镜身份、其上没有其他迁移记录、且表已存在时，
-// 把这条已应用记录改写到规范版本 55；其余任何不符仍拒绝启动，不靠伪造记录绕过检查。
-func normalizeLegacyProviderEgressMigration(tx *gorm.DB) error {
-	var legacy schemaMigration
-	if err := tx.First(&legacy, "version = ?", legacyProviderEgressMigrationVersion).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
+func migrateSchemaV56(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.ApiCallLog{}, &model.Task{}, &model.CreditLedgerEntry{}); err != nil {
+		return fmt.Errorf("迁移 SQL 性能索引：%w", err)
+	}
+	if tx.Dialector.Name() == "sqlite" {
+		if err := tx.Exec("UPDATE api_call_logs SET created_at_epoch = unixepoch(created_at) WHERE created_at_epoch = 0 OR created_at_epoch IS NULL").Error; err != nil {
+			return fmt.Errorf("回填 api_call_logs 时间戳：%w", err)
 		}
-		return fmt.Errorf("读取旧内镜台账迁移记录：%w", err)
+		if err := tx.Exec("UPDATE tasks SET created_at_epoch = unixepoch(created_at) WHERE created_at_epoch = 0 OR created_at_epoch IS NULL").Error; err != nil {
+			return fmt.Errorf("回填 tasks 时间戳：%w", err)
+		}
 	}
-	if legacy.Name != providerEgressMigrationName || legacy.Checksum != legacyProviderEgressMigrationChecksum {
-		return nil
-	}
+	return nil
+}
 
+// normalizeLegacyProviderEgressMigration 处理本仓库特性分支留下的账本：出站内镜台账
+// 曾登记在版本 51，合并后又登记在 55，而这两个号都被上游占用，同号会让启动校验直接
+// 失败。仅在记录精确等于旧内镜身份、其上没有其他迁移记录、且表已存在时，把这条已应用
+// 记录改写到规范版本；其余任何不符仍拒绝启动，不靠伪造记录绕过检查。
+// providerEgressLegacyIdentities 是本分支先后登记出站内镜台账的旧位置：51 让给上游的
+// personal_profile_security，55 让给上游的 provider_catalog_source。只有记录精确等于
+// 对应旧身份时才改写，上游正常占用这些版本的情况一律原样放过。
+var providerEgressLegacyIdentities = []struct {
+	version  int64
+	checksum string
+}{
+	{legacyProviderEgressMigrationVersion, legacyProviderEgressMigrationChecksum},
+	{staleProviderEgressMigrationVersion, staleProviderEgressMigrationChecksum},
+}
+
+func normalizeLegacyProviderEgressMigration(tx *gorm.DB) error {
+	for _, identity := range providerEgressLegacyIdentities {
+		var legacy schemaMigration
+		if err := tx.First(&legacy, "version = ?", identity.version).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return fmt.Errorf("读取旧内镜台账迁移记录：%w", err)
+		}
+		if legacy.Name != providerEgressMigrationName || legacy.Checksum != identity.checksum {
+			continue
+		}
+		if err := rewriteProviderEgressLedger(tx, &legacy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func rewriteProviderEgressLedger(tx *gorm.DB, legacy *schemaMigration) error {
 	var later []schemaMigration
 	if err := tx.Where("version > ?", legacy.Version).Order("version asc").Find(&later).Error; err != nil {
 		return fmt.Errorf("读取旧内镜台账迁移后的记录：%w", err)
 	}
 	if len(later) > 0 {
-		return fmt.Errorf("数据库迁移 51 使用旧内镜台账身份，但已存在后续迁移记录 %d；拒绝自动改写迁移账本", later[0].Version)
+		return fmt.Errorf("数据库迁移 %d 使用旧内镜台账身份，但已存在后续迁移记录 %d；拒绝自动改写迁移账本", legacy.Version, later[0].Version)
 	}
 	if !tx.Migrator().HasTable(&model.ProviderEgressObject{}) {
-		return fmt.Errorf("数据库迁移 51 记录为旧内镜台账迁移，但出站内镜表不完整；请从备份恢复后再升级")
+		return fmt.Errorf("数据库迁移 %d 记录为旧内镜台账迁移，但出站内镜表不完整；请从备份恢复后再升级", legacy.Version)
 	}
 
 	result := tx.Model(&schemaMigration{}).
