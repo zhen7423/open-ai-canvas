@@ -361,6 +361,68 @@ func TestMigrateSchemaNormalizesStaleProviderEgressMigrationV55(t *testing.T) {
 	}
 }
 
+// 线上库刚在上一轮被改写到 57，上游 v1.6.8.9 又把 57 用作 canvas_multi_session_sync。
+// 这条 57 的旧身份必须再改写到 58，并让上游 57 正常补跑。
+func TestMigrateSchemaNormalizesPreviousProviderEgressMigrationV57(t *testing.T) {
+	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-previous-provider-egress-v57?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	appliedAt := time.Now().UTC().Add(-24 * time.Hour)
+	if err := db.Where("version >= ?", previousProviderEgressMigrationVersion).Delete(&schemaMigration{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&schemaMigration{
+		Version:   previousProviderEgressMigrationVersion,
+		Name:      providerEgressMigrationName,
+		Checksum:  previousProviderEgressMigrationChecksum,
+		AppliedAt: appliedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MigrateSchema(db); err != nil {
+		t.Fatalf("previous version 57 provider egress ledger should be normalized: %v", err)
+	}
+	status, err := ReadSchemaStatus(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Ready || status.Current != CurrentSchemaVersion {
+		t.Fatalf("unexpected normalized schema status: %#v", status)
+	}
+
+	var normalized schemaMigration
+	if err := db.First(&normalized, "version = ?", providerEgressMigrationVersion).Error; err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Name != providerEgressMigrationName || normalized.Checksum != providerEgressMigrationChecksum {
+		t.Fatalf("normalized provider egress migration = %#v", normalized)
+	}
+	if normalized.AppliedAt.IsZero() || normalized.AppliedAt.Sub(appliedAt).Abs().Seconds() > 2 {
+		t.Fatalf("normalizing dropped the original applied time: got %#v want about %v", normalized, appliedAt)
+	}
+
+	var collaboration schemaMigration
+	if err := db.First(&collaboration, "version = ?", previousProviderEgressMigrationVersion).Error; err != nil {
+		t.Fatalf("upstream migration 57 missing after normalizing: %v", err)
+	}
+	if collaboration.Name != "canvas_multi_session_sync" || collaboration.Checksum != "sha256:canvas-multi-session-sync-v57" {
+		t.Fatalf("upstream migration 57 = %#v", collaboration)
+	}
+
+	var staleCount int64
+	if err := db.Model(&schemaMigration{}).Where("version = ? AND name = ?", previousProviderEgressMigrationVersion, providerEgressMigrationName).Count(&staleCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if staleCount != 0 {
+		t.Fatalf("previous provider egress row still occupies version 57: %d", staleCount)
+	}
+}
+
 // 旧内镜账本上面还压着别的迁移记录时，改写会猜错真实状态，必须拒绝而不是硬归一化。
 func TestMigrateSchemaRejectsLegacyProviderEgressWithLaterRecords(t *testing.T) {
 	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-legacy-provider-egress-conflict?mode=memory&cache=shared"})

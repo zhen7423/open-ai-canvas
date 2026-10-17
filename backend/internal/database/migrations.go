@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 57
+const CurrentSchemaVersion int64 = 58
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -33,14 +33,17 @@ const workbenchToolsMigrationName = "workbench_tools_and_presets"
 const workbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v54-20261014"
 const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v51-20261014"
 const providerEgressMigrationName = "provider_egress_objects"
-const providerEgressMigrationVersion int64 = 57
-const providerEgressMigrationChecksum = "sha256:provider-egress-objects-v57-20261016"
+const providerEgressMigrationVersion int64 = 58
+const providerEgressMigrationChecksum = "sha256:provider-egress-objects-v58-20261016"
 const legacyProviderEgressMigrationVersion int64 = 51
 const legacyProviderEgressMigrationChecksum = "sha256:provider-egress-objects-v51-20261011"
-// 上游 v1.6.8.4 把 55 用作 provider_catalog_source、56 用作 sql_perf_indexes，本分支的
-// 出站内镜台账要从 55 再让位到 57；已按 55 应用过的库需要改写这条旧身份记录。
+
+// 上游 v1.6.8.4 把 55 用作 provider_catalog_source、56 用作 sql_perf_indexes，v1.6.8.9 又把
+// 57 用作 canvas_multi_session_sync；本分支台账依次让位，已按旧身份应用过的库需要改写这条记录。
 const staleProviderEgressMigrationVersion int64 = 55
 const staleProviderEgressMigrationChecksum = "sha256:provider-egress-objects-v55-20261013"
+const previousProviderEgressMigrationVersion int64 = 57
+const previousProviderEgressMigrationChecksum = "sha256:provider-egress-objects-v57-20261016"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -205,8 +208,9 @@ var schemaMigrations = []migration{
 		return nil
 	}},
 	{version: 56, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v56-20261016", apply: migrateSchemaV56},
-	// 本仓库分支的出站内镜台账：先后登记在 51、55，两次都因为上游占用同号而让位，
-	// 现在排在计划末项 57。旧账本由 normalizeLegacyProviderEgressMigration 改写，
+	{version: 57, name: "canvas_multi_session_sync", checksum: "sha256:canvas-multi-session-sync-v57", apply: migrateCanvasCollaboration},
+	// 本仓库分支的出站内镜台账：先后登记在 51、55、57，三次都因为上游占用同号而让位，
+	// 现在排在计划末项 58。旧账本由 normalizeLegacyProviderEgressMigration 改写，
 	// 不要求手工改 schema_migrations。
 	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.ProviderEgressObject{})
@@ -596,21 +600,23 @@ func migrateSchemaV56(tx *gorm.DB) error {
 	return nil
 }
 
-// normalizeLegacyProviderEgressMigration 处理本仓库特性分支留下的账本：出站内镜台账
-// 曾登记在版本 51，合并后又登记在 55，而这两个号都被上游占用，同号会让启动校验直接
-// 失败。仅在记录精确等于旧内镜身份、其上没有其他迁移记录、且表已存在时，把这条已应用
-// 记录改写到规范版本；其余任何不符仍拒绝启动，不靠伪造记录绕过检查。
 // providerEgressLegacyIdentities 是本分支先后登记出站内镜台账的旧位置：51 让给上游的
-// personal_profile_security，55 让给上游的 provider_catalog_source。只有记录精确等于
-// 对应旧身份时才改写，上游正常占用这些版本的情况一律原样放过。
+// personal_profile_security，55 让给 provider_catalog_source，57 让给
+// canvas_multi_session_sync。只有记录精确等于对应旧身份时才改写，上游正常占用这些版本
+// 的情况一律原样放过。
 var providerEgressLegacyIdentities = []struct {
 	version  int64
 	checksum string
 }{
 	{legacyProviderEgressMigrationVersion, legacyProviderEgressMigrationChecksum},
 	{staleProviderEgressMigrationVersion, staleProviderEgressMigrationChecksum},
+	{previousProviderEgressMigrationVersion, previousProviderEgressMigrationChecksum},
 }
 
+// normalizeLegacyProviderEgressMigration 处理本仓库特性分支留下的账本：出站内镜台账曾
+// 依次登记在 51、55、57，而这三个号都被上游后续版本占用，同号会让启动校验直接失败。
+// 仅在记录精确等于对应旧内镜身份、其上没有其他迁移记录、且表已存在时，把这条已应用记录
+// 改写到规范版本；其余任何不符仍拒绝启动，不靠伪造记录绕过检查。
 func normalizeLegacyProviderEgressMigration(tx *gorm.DB) error {
 	for _, identity := range providerEgressLegacyIdentities {
 		var legacy schemaMigration
