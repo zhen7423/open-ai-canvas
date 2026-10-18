@@ -2,3 +2,8 @@ plugin-packages/*.sh text eol=lf
 # 内置技能包的脚本树有完整性基线哈希（backend/internal/skills/skills_yingshi_builtin_test.go），
 # 按 LF 计算；不锁行尾时 Windows 的 core.autocrlf 会检出成 CRLF，让该测试在本地必假红。
 backend/builtin/**/*.py text eol=lf
+# 前端有若干"读源码再断言字面量"的契约测试（web/test/agent-panel-layout.test.ts 等），
+# 断言里带换行加缩进；Windows 的 core.autocrlf 把检出变成 CRLF 后这些断言必假红。
+# 与内置技能包同一手法：锁 LF，让源码树在两种平台上都是 LF。
+web/src/** text eol=lf
+web/test/** text eol=lf
