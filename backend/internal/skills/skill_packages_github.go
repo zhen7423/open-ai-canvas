@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -68,6 +69,7 @@ func fetchGitHubSkillArchive(ctx context.Context, spec githubSkillSpec) (skillPa
 	downloadURL := fmt.Sprintf("https://codeload.github.com/%s/%s/zip/%s", url.PathEscape(spec.Owner), url.PathEscape(spec.Repo), url.PathEscape(commitInfo.SHA))
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	request.Header.Set("User-Agent", outbound.DefaultOutboundUserAgent)
+	setGitHubAuthorization(request)
 	response, err := client.Do(request)
 	if err != nil {
 		return skillPackageArchive{}, "", "", "", fmt.Errorf("下载 GitHub 技能失败: %w", err)
@@ -95,6 +97,7 @@ func githubJSON(ctx context.Context, client *http.Client, target string, output 
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("User-Agent", outbound.DefaultOutboundUserAgent)
+	setGitHubAuthorization(request)
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("读取 GitHub 信息失败: %w", err)
@@ -104,4 +107,12 @@ func githubJSON(ctx context.Context, client *http.Client, target string, output 
 		return fmt.Errorf("读取 GitHub 信息失败: HTTP %d", response.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(output)
+}
+
+// setGitHubAuthorization 给 GitHub 请求带上令牌：未认证访问 api.github.com 只有
+// 60 次/小时的按 IP 配额，装技能时会被误报成"仓库地址或网络"问题。
+func setGitHubAuthorization(request *http.Request) {
+	if token := strings.TrimSpace(os.Getenv("CANVAS_GITHUB_TOKEN")); token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 }

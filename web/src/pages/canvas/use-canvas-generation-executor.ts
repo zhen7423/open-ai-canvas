@@ -231,6 +231,29 @@ export function useCanvasGenerationExecutor({
                     const promptLengthError = mode === "video" ? modelPromptLengthError(generationConfig, generationConfig.model, mode, effectivePrompt) : "";
                     if (promptLengthError) {
                         message.error(promptLengthError);
+                        // 上面已经把节点标成加载中并写了准备阶段，这里不回写失败态的话，
+                        // 超限只会弹一条 toast，节点会一直停在“正在准备参考素材”。
+                        if (markSourceStatus)
+                            setNodes((current) =>
+                                current.map((node) =>
+                                    node.id === nodeId
+                                        ? {
+                                              ...node,
+                                              metadata: {
+                                                  ...node.metadata,
+                                                  status: NODE_STATUS_ERROR,
+                                                  errorDetails: promptLengthError,
+                                                  taskStage: undefined,
+                                                  taskProgress: undefined,
+                                                  taskCreatedAt: undefined,
+                                                  generationErrorCode: undefined,
+                                                  resourceReloadAvailable: undefined,
+                                                  failedPromptFingerprint: undefined,
+                                              },
+                                          }
+                                        : node,
+                                ),
+                            );
                         finishGenerationRequest(nodeId, preparationController);
                         setRunningNodeId(null);
                         return;
