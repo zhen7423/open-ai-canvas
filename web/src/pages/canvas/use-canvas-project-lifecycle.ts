@@ -15,6 +15,7 @@ import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync, 
 import { getCanvasSyncStatus } from "@/services/api/user-data";
 import { canvasEditLeases } from "@/services/canvas-edit-leases";
 import { startCanvasSyncPolling } from "@/services/canvas-sync-polling";
+import { subscribeCanvasRealtime } from "@/services/canvas-realtime";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { waitForCanvasSync } from "@/lib/canvas/sync-recovery";
 import { flushCanvasStorePersistence, useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
@@ -272,17 +273,35 @@ export function useCanvasProjectLifecycle({
     useEffect(() => {
         if (!projectLoaded || !sessionHydrated) return;
         const scope = getActiveUserScope();
-        return startCanvasSyncPolling(async (signal) => {
+        let connected = false;
+        let agentActive = false;
+        // Lease maintenance must continue independently of remote notifications.
+        let ticking = false;
+        const tick = async () => {
+            if (ticking || scope !== getActiveUserScope() || navigator.onLine === false) return;
+            ticking = true;
+            try { await canvasEditLeases.tick(projectId); } finally { ticking = false; }
+        };
+        const leaseTimer = setInterval(() => { void tick(); }, 2000);
+        void tick();
+        const stop = startCanvasSyncPolling(async (signal) => {
             if (scope !== getActiveUserScope()) return;
-            await canvasEditLeases.tick(projectId);
-            if (signal.aborted || scope !== getActiveUserScope()) return;
             const token = canvasEditLeases.statusToken(projectId);
             const status = await getCanvasSyncStatus(projectId, signal);
             if (signal.aborted || scope !== getActiveUserScope()) return;
+            agentActive = Boolean(status.agent);
             canvasEditLeases.status(projectId, status, token);
             const current = useCanvasStore.getState().openProject(projectId);
             if (current && status.revision !== current.revision) await refreshCanvasAfterAgent(projectId, "sync");
+        }, undefined, {
+            interval: () => connected && !agentActive ? 30000 : 2000,
+            listen: (wake) => subscribeCanvasRealtime(projectId, (state, event) => {
+                const disconnected = connected && !state.connected;
+                connected = state.connected;
+                if (event === "invalidate" || disconnected) wake();
+            }),
         });
+        return () => { stop(); clearInterval(leaseTimer); };
     }, [projectId, projectLoaded, sessionHydrated, userId]);
 
     useEffect(() => {

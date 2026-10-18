@@ -63,6 +63,7 @@ import { CanvasFileDropOverlay } from "@/components/canvas/canvas-file-drop-over
 import { CanvasUploadModal } from "@/components/canvas/canvas-upload-modal";
 import { CanvasPanoramaConfigModal } from "@/components/canvas/canvas-panorama-config-modal";
 import { CanvasViewport } from "@/components/canvas/canvas-viewport";
+import { CanvasCollaborationLayer } from "@/components/canvas/canvas-collaboration-layer";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import { handleListGenerate } from "./list-mode-generator";
@@ -2814,6 +2815,8 @@ function CanvasViewportPage() {
                                             </CanvasNodeGraphContext.Provider>
                                         </CanvasNodeActionContext.Provider>
                                     </CanvasViewport>
+
+                                    <CanvasCollaborationLayer key={`${canvasStorageScope}:${projectId}`} canvasId={projectId} enabled={projectLoaded} containerRef={containerRef} nodesRef={nodesRef} viewportRef={viewportRef} />
 
                                     <CanvasActiveTaskPanel tasks={activeTasks} onCancelTask={cancelCanvasTask} topInset={focusMode ? "var(--space-3)" : "var(--canvas-topbar-offset)"} />
 

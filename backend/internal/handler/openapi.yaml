@@ -486,7 +486,7 @@ paths:
     get:
       tags: [canvas]
       summary: 读取当前用户画布版本、输入租约及 Agent 占用状态
-      description: 需要登录并拥有画布。仅返回 revision、服务端时间、有效租约和 Agent 控制字段，不返回 token、完整画布或 Agent 对话正文；客户端前台约每两秒、后台约每十五秒非重叠查询，离线暂停，失败逐步退避至三十秒，版本变化后再读取正文。
+      description: 需要登录并拥有画布。仅返回 revision、服务端时间、有效租约和 Agent 控制字段，不返回 token、完整画布或 Agent 对话正文；WebSocket 通知后校验状态，连接正常且无活动 Agent 时每三十秒补偿读取，断线或活动 Agent 期间恢复前台两秒、后台十五秒非重叠查询。版本变化后再读取正文。
       responses:
         "200":
           description: 信封 data 含 revision、serverTime、leases 和可空的 agent；每项租约含 nodeId、sessionId、expiresAt，agent 只含 runId、status、cleanupPending
@@ -494,6 +494,27 @@ paths:
           description: 未登录
         "404":
           description: 画布不存在或不属于当前用户
+  /canvas-projects/{id}/realtime:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      tags: [canvas]
+      summary: 建立画布多窗口光标、拖拽预览与同步通知 WebSocket
+      description: 使用登录 Cookie，校验画布归属和 Origin。welcome 返回 selfId/peers，每个 peer 包含服务端分配的 number（1–64），同一会话在各窗口编号一致且存续期间不变；Redis 模式跨实例分配并续期临时编号。客户端发送世界坐标 presence，服务端广播 peer/leave/invalidate/heartbeat。光标与拖拽预览不入库，invalidate 只在事务提交后发送，收到后通过 sync-status 校准。协议细节见画布操作同步专题。
+      responses:
+        "101":
+          description: 已升级到 WebSocket
+        "401":
+          description: 未登录
+        "403":
+          description: 来源不允许
+        "404":
+          description: 画布不存在或不属于当前用户
+        "503":
+          description: 实时服务暂不可用，客户端保留 HTTP 同步
   /canvas-projects/{id}/edit-lease:
     parameters:
       - in: path
