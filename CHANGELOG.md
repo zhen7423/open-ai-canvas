@@ -2,9 +2,9 @@
 
 ## v1.6.8.9
 
-- 本仓库分支让位：出站内镜台账 `provider_egress_objects` 从 v57 移到 **v58**（上游 v1.6.8.9 把 57 用作 `canvas_multi_session_sync`，新增 `canvas_edit_leases` 画布编辑租约表）。旧身份表 `providerEgressLegacyIdentities` 增至 51、55、57 三项，逐项精确核对名称与校验和、其上无更高迁移记录且表完整后才在同一事务改写并保留原应用时间，随后照常补跑上游 57；`CurrentSchemaVersion` 为 58。
+- 本仓库分支迁入保留段：出站内镜台账 `provider_egress_objects` 的登记号改为 **v9001**（`providerEgressReservedFrom = 9000` 起）。该表此前四次被上游挤号——51 让给 `personal_profile_security`、55 让给 `provider_catalog_source`、57 让给 `canvas_multi_session_sync`、58 只是合并树里的过渡号且从未上线；迁入保留段后上游再追加迁移也不会再撞号。旧身份表 `providerEgressLegacyIdentities` 收录 51、55、57、58 四项，逐项精确核对名称与校验和、其上无更高迁移记录且表完整后才在同一事务改写并保留原应用时间，随后照常补跑上游 55–57。`CurrentSchemaVersion` 直接取该保留段版本。
 - 上游新增的 `TestCanvasCollaborationUpgradeFrom56` 把结构头写死成 57，本分支让位后必然失败；改为断言 `status.Current == CurrentSchemaVersion`，保留"从 v56 边界升级后停在计划末项"的原意，不放宽检查。
-- 升级注意：本版本上游数据库结构升至 v57；本仓库分支为 **v58**。已按 57 应用过出站内镜台账的库会在启动时自动改写，无需手工修改账本；升级前照例备份数据库。
+- 升级注意：本版本上游数据库结构升至 v57；本仓库分支为 **v9001**。已按 51、55、57 或 58 应用过出站内镜台账的库会在启动时自动改写，无需手工修改账本；升级前照例备份数据库。
 
 - 画布 Agent 新建对话不再自动安装或默认使用“影策短剧制作工作流”技能，技能由用户主动选择。
 - 首页灵感大厅默认每页展示 30 个，分页选项统一为 30、60、90。
@@ -46,7 +46,7 @@
 - 加强用户错误信息脱敏，隐藏上游地址、内部诊断及任务标识，管理员诊断入口保留必要信息。
 - 优化 SQLite 时间范围查询索引、钱包读取、模型可用性缓存和素材引用查询，减少慢查询与读路径写锁争用。
 - 修复前端格式检查及 Agent 媒体回写测试的异步竞争，补充数据库升级回归测试。
-- 升级注意：数据库 Schema 升至 v56，包含 v55 服务商目录来源字段及 v56 时间戳回填与索引优化。本仓库分支当时在其上追加 v57（出站内镜台账 `provider_egress_objects` 原登记在 v55，为让开上游的 `provider_catalog_source` 再挪一位）；v1.6.8.9 合并时该表又让位到 **v58**，见对应条目。升级前备份数据库；受管生产 Compose 的 `migrate` 服务会在 Backend 启动前执行迁移，其他部署先运行 `migrate-schema up` 和 `migrate-schema verify`，不要手工修改迁移账本。SQLite 既有任务和调用日志需要回填时间戳，大库请预留迁移时间。
+- 升级注意：数据库 Schema 升至 v56，包含 v55 服务商目录来源字段及 v56 时间戳回填与索引优化。本仓库分支当时在其上追加 v57（出站内镜台账 `provider_egress_objects` 原登记在 v55，为让开上游的 `provider_catalog_source` 再挪一位）；v1.6.8.9 合并时该表已迁入保留段 **v9001**，见对应条目。升级前备份数据库；受管生产 Compose 的 `migrate` 服务会在 Backend 启动前执行迁移，其他部署先运行 `migrate-schema up` 和 `migrate-schema verify`，不要手工修改迁移账本。SQLite 既有任务和调用日志需要回填时间戳，大库请预留迁移时间。
 - 本仓库分支迁移器 `normalizeLegacyProviderEgressMigration` 在该版本认 51 与 55 两个旧身份（v1.6.8.9 起增至 51、55、57 三个）：仅当该版本的记录名称与校验和精确等于旧内镜台账、其上没有其他迁移记录且出站内镜表完整时，在同一事务把这条已应用记录改写到 v57 并保留原应用时间，随后照常补跑上游 v55（目录来源字段）与 v56（时间戳回填与索引）；其余任何不符仍拒绝启动，不靠伪造记录绕过校验。
 
 ## v1.6.8.3
@@ -88,7 +88,7 @@
 - 修复服务端出站 URL 对 DNS 解析结果的私网 IP 拦截被注释的问题，恢复对环回、内网和链路本地地址的拒绝，避免 SSRF。
 - 修复 Quality checks 中工作台测试模块路径、懒加载画布路由合同、模型促销标签和影视剧作工坊完整性基线问题。
 - 正式镜像包含影视剧作工坊内置 Skill；服务启动时同步技能目录、版本和文件记录，并保留用户加入/收藏状态。
-- 升级注意：上游数据库 Schema 为 v54，本仓库分支当时为 **v55**（在此之上追加「本参图片出站内镜」台账 `provider_egress_objects`；该表此后依次让位到 v57、v58，见 v1.6.8.4 与 v1.6.8.9 条目）。生产 Compose 的 `migrate` 服务会在 Backend 启动前执行 `migrate-schema up`，旧 v51 工作台账本会自动兼容升级，无需手工修改 `schema_migrations`。
+- 升级注意：上游数据库 Schema 为 v54，本仓库分支当时为 **v55**（在此之上追加「本参图片出站内镜」台账 `provider_egress_objects`；该表此后依次让位到 v57、v58，并最终迁入保留段 v9001，见 v1.6.8.4 与 v1.6.8.9 条目）。生产 Compose 的 `migrate` 服务会在 Backend 启动前执行 `migrate-schema up`，旧 v51 工作台账本会自动兼容升级，无需手工修改 `schema_migrations`。
 - 本仓库分支另加迁移器 `normalizeLegacyProviderEgressMigration`：本特性早期曾在版本 51 登记 `provider_egress_objects`，与上游的 `personal_profile_security` 同号；仅当该记录的名称与旧校验和精确匹配、其上无更高迁移记录且出站内镜表完整时，在同一事务把这条已应用记录改写到 v55 并保留原应用时间，其余情况仍拒绝启动。已按 v51 登记过的库因此无需手工改账本。
 
 ## v1.6.6.1

@@ -423,6 +423,26 @@ func TestMigrateSchemaNormalizesPreviousProviderEgressMigrationV57(t *testing.T)
 	}
 }
 
+// 本分支自建表一律登记在保留段，避免上游每发一个版本就占走下一个号（历史上已撞过
+// 51、55、57 三次）。计划末项必须还是这条，且所有旧身份都在保留段之前。
+func TestProviderEgressMigrationUsesReservedRange(t *testing.T) {
+	if providerEgressMigrationVersion < providerEgressReservedFrom {
+		t.Fatalf("provider egress migration version = %d, 必须落在保留段 %d 起", providerEgressMigrationVersion, providerEgressReservedFrom)
+	}
+	if CurrentSchemaVersion != providerEgressMigrationVersion {
+		t.Fatalf("CurrentSchemaVersion = %d, 计划末项 = %d", CurrentSchemaVersion, providerEgressMigrationVersion)
+	}
+	last := schemaMigrations[len(schemaMigrations)-1]
+	if last.version != providerEgressMigrationVersion || last.name != providerEgressMigrationName {
+		t.Fatalf("计划末项 = %d/%s，应为 %d/%s", last.version, last.name, providerEgressMigrationVersion, providerEgressMigrationName)
+	}
+	for _, identity := range providerEgressLegacyIdentities {
+		if identity.version >= providerEgressReservedFrom {
+			t.Fatalf("旧身份版本 %d 落在保留段内，改写目标可能与自身冲突", identity.version)
+		}
+	}
+}
+
 // 旧内镜账本上面还压着别的迁移记录时，改写会猜错真实状态，必须拒绝而不是硬归一化。
 func TestMigrateSchemaRejectsLegacyProviderEgressWithLaterRecords(t *testing.T) {
 	db, err := Open(Config{Driver: "sqlite", DSN: "file:migration-legacy-provider-egress-conflict?mode=memory&cache=shared"})
