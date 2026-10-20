@@ -3459,3 +3459,12 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 切换能力和协议后保存、重开，确认旧协议字段清除，价格数值保持。
 - 验证 21:9 声明比例、自由像素尺寸和默认分辨率在准入、计价和执行中一致。
 - 真实渠道生成与费用仍需维护者使用自己的渠道验证。
+
+## 合并上游 v1.6.8.12（2026-10-19）
+
+- 已合并：`upstream/main` 的 20 个提交（v1.6.8.12 发布）——画布 Agent 形象（ZIP 动画包导入与多状态动画、加载闪烁与入口布局）、画布外观预设与浅深配色独立记忆、批量表与图片工具/视口交互、重进画布后生成完成状态恢复（#813）、创建页生成设置裁切与素材档案标签（#818）、Agent 技能检索中文匹配（#820）、百炼 MiniMax H3 视频协议插件（#822）、图片参数与协议切换一致性（#828）、任务终态后耗时与重新生成计时（#831）、Web Prettier 门禁与过时加载断言修复。
+- 迁移号继续没撞：`backend/internal/database/migrations.go` 与合并前**逐字一致**（`git diff 4dc7cb2b -- <file>` 为 0 行），上游本批没有新增或改动迁移，结构仍 **9001**，保留段常量（`providerEgressReservedFrom`）与旧身份表都在，不需要任何让位改写。`VERSION` 随上游变为 **v1.6.8.12**，与 CHANGELOG 头一致。
+- 冲突两处，都在文档尾部追加，两侧都保留：`docs/content/docs/overview/features.mdx`（本分支"本参图片出站内镜"＋上游"画布外观预设"）、`docs/content/docs/progress/pending-test.mdx`（本分支两节＋上游"模型配置与图片参数通用修复"）。自动合并成功且已逐项核对的三处：`.gitignore`（上游新增 bailian-minimax 文档白名单，我方 `docker-compose.lan.yml` 仍在第 82 行）、`CHANGELOG.md`（顶部是上游 v1.6.8.12，本分支 v1.6.8.11 的两条说明保留）、`backend/internal/service/aliases_types.go`（出站内镜的 service 别名未丢）。
+- [x] 门禁：后端 `go build ./...`、`go vet ./...`、`go test ./... -count=1` 全 0（`BUILD_EXIT=0 / VET_EXIT=0 / TEST_EXIT=0`，无 FAIL）；前端按合并后的树重建 `yingce-webbuild:merge`，`tsc` 退出 0，全量 `bun test` **2657 pass / 14 fail**，失败名单与合并前的 14 条**逐字相同**（`comm` 双向为空）。上游那条"修复 Prettier 门禁与过时加载断言"没有改变这 14 条既有环境红。
+- [ ] 画布超限（预提交早退不回滚加载态）**上游仍未修**：本批重构了 executor（新增 `inputSnapshot` 批量输入快照、`canvasGenerationInputPrompt` 取代打光/镜头参数拼接），但 `promptLengthError` 分支依旧是 `message.error` 后直接早退，没有回写节点状态。继续等上游。
+- [ ] 上游新增的 Agent 形象 ZIP 动画包、画布外观预设与批量表交互需要浏览器验收；本轮只做门禁，未启动浏览器、未跑付费生成。
