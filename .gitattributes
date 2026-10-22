@@ -7,3 +7,6 @@ backend/builtin/**/*.py text eol=lf
 # 与内置技能包同一手法：锁 LF，让源码树在两种平台上都是 LF。
 web/src/** text eol=lf
 web/test/** text eol=lf
+# Agent 工具 schema 的 golden 测试用 bytes.Equal 逐字节比对产物；
+# Windows 检出成 CRLF 时必假红（2026-10-22 合并 v1.6.9 后实测，LF 副本全 PASS）。
+backend/internal/app/testdata/agent_tools/*.json text eol=lf

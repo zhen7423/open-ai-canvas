@@ -84,7 +84,6 @@ func TestCanvasCollaborationUpgradeFrom56(t *testing.T) {
 		}
 	}
 	status, err := ReadSchemaStatus(db)
-	// 本分支在 57 之后还追加了出站内镜台账，结构头不等于上游的 57；断言应跟着计划末项走。
 	if err != nil || !status.Ready || status.Current != CurrentSchemaVersion {
 		t.Fatalf("unexpected schema status: %+v %v", status, err)
 	}
