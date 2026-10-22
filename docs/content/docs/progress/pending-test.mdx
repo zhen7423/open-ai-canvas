@@ -3578,3 +3578,13 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 已验证：`go test ./... -count=1 -timeout=20m`、`go vet ./...`、`go build ./...`、前端 2716 项测试、`bun run lint`、`bun run build` 通过；数据库与API迁移测试包含SQLite。四篇修改后的MDX逐篇编译及OpenAPI引用解析通过。
 - 环境阻塞：文档站 `bun run types:check` 在 MDX 扫描前失败，当前忽略的 `docs/node_modules/fdir/dist/index.mjs` 调用了 `Dirent.isPrevisy()`（Node Dirent 无此方法）；为避免改依赖，本轮未继续修补 node_modules。
 - [ ] 真实模型/收费生成与多次运行pass^k、provider缓存命中率、PostgreSQL 58迁移、浏览器记忆提案与历史撤销尚未人工验收。
+
+## 合并上游 v1.6.9（2026-10-22）
+
+- 已合并：`upstream/main` 的 21 个提交（v1.6.9）——Agent 29 个工具统一 Registry/Policy/审批预演，焦点上限 8 与 Pi 步数预算统一，记忆压缩改为可版本校验的提案（候选仅运行成功后才待审），步骤卡逐步撤销（服务端回执、收费任务不可撤销）；画布网格跟随视口与 Dock 重写、自动整理按连通分量分层、局域网 HTTP 下的 `crypto.randomUUID` 兼容、视频签名地址续签不再重建播放器；预演台改为摆场/动画双模式；批量上传真实进度；运营总览空数据不再显示 ↓100%；减少动态效果下浮层定位修复。另新增「积分运营 → 冻结积分自动退回」开关（`billing_auto_refund.go`，**默认关闭**，开启后每分钟最多扫描 100 笔 `uncertain` 自动退回）。
+- 结构变化：上游新增 **58 `agent_memory_proposals`**（建 `agent_lessons`、`agent_memory_settings`、`agent_memory_proposals`、`agent_memory_revisions` 四表）。本分支 `CurrentSchemaVersion` 仍取保留段末项 **9001**，58 已插入迁移计划 9001 之前；四张表在三处都登记了（`database.Models()`、`migrations.go`、`cmd/migrate-sqlite-postgres`）。**线上库当前是 55/56/57/9001，尚未部署本轮**——部署新后端启动时会补跑 58，预期账本变成 55/56/57/58/9001 且 9001 的 `applied_at` 仍是 2026-10-12 01:14:32。
+- 冲突四处及处置：`migrations.go`（`CurrentSchemaVersion` 保留 `providerEgressMigrationVersion`，计划尾部把上游 58 排在 9001 之前）、`canvas_collaboration_test.go`（上游已改用 `CurrentSchemaVersion` 断言，删掉本分支那条"结构头不等于上游 57"的过时注释）、`backend-database.mdx`（保留本分支 9001 段，补一句上游 58）、`pending-test.mdx`（两侧章节都留，上游新条目并入"模型配置与图片参数通用修复"节）。
+- 新踩到的行尾假红与修法：上游新增的 `TestCloudAgentToolSchemaGolden` 与 `TestCloudAgentSupportedToolNamesGolden` 用 `bytes.Equal` 逐字节比对 `backend/internal/app/testdata/agent_tools/*.json`；Windows 检出 CRLF 时必假红（修正前 `TEST_EXIT=1`，4 个 schema 子用例 + 1 个名单用例 FAIL）。按 `web/src` 同一手法给该目录加 `text eol=lf`，工作树转 LF 后直接通过；`git diff --cached upstream/main -- 该目录` 为 0 行，证明只改检出策略、没动 golden 内容。
+- [x] 门禁：后端 `go build ./...`、`go vet ./...`、`go test ./... -count=1` 全 0（行尾修正后重跑；修正前只有上述 2 条 golden 假红）；前端按合并树重建 `yingce-webbuild:merge` 后 `tsc` 0、全量 `bun test` **2719 pass / 14 fail**，失败名单与上一轮 14 条逐字相同（`comm` 双向为空）。
+- [ ] 部署后需核对：58 补跑结果与 9001 的 `applied_at`；Agent 记忆提案/逐步撤销、画布 Dock 与网格跟随视口、预演台双模式的浏览器验收；自动退回开关默认关闭、不要误开。
+- [ ] 画布超限（预提交早退不回滚加载态）上游仍未修：`promptLengthError` 分支依旧只 `message.error` 后早退。继续等。
