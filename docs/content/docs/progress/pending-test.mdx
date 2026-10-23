@@ -3678,3 +3678,14 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 启动日志的账单巡检：`stale_orders=9 reserved=0 running=2 uncertain=7 oldest=2026-10-19T09:10:18Z`。7 笔 `uncertain` 的冻结额全为 0（无积分被占），比上一轮的 1 笔多，是这两天 Agent 使用累积产生的；上游新增的自动退回开关默认关闭，且对这些 0 冻结订单也没有金额可退，仍按人工核对口径处理。
 - [ ] 浏览器验收：Agent 记忆提案/逐步撤销、画布 Dock 与网格跟随视口、预演台双模式、批量上传进度；自动退回开关保持关闭、不要误开。
 - [ ] 画布超限（预提交早退不回滚加载态）上游仍未修：`promptLengthError` 分支依旧只 `message.error` 后早退。继续等。
+
+## 合并上游 v1.6.9.1（2026-10-22）
+
+- 已合并：`upstream/main` 的 31 个提交（v1.6.9.1）——画布音频播放器接入 Web Audio 真实波形与 60fps 游标；视频签名地址续签复用播放器、快速创作结果按资源身份稳定展示；画布连线动态反馈与目标命中/拖线预览；Pi 对未完成计划有限续跑、审批恢复清理旧提示、快照哈希忽略节点时间戳；视频轮询连接重置不再判永久失败、非视频异步轮询可选有限重试（`CANVAS_ASYNC_POLL_TRANSIENT_RETRIES`，默认 0）；新增 Cheaper Inference Chat 与 MaxForAI 视频协议插件；渠道模型协议标识扩到 64 字符；素材库批量上传支持拖放与失败原因；新增用户反馈插件（多媒体附件、收件箱式答复与历史归档）；系统模型代理地址清空后保存生效。
+- 结构：上游代码 `CurrentSchemaVersion = 60`，新增 **59 `channel_model_protocol_length`**（`channel_models.protocol` 由 32 扩到 64，SQLite 走 `AlterColumn`、PostgreSQL 走 `ALTER COLUMN TYPE varchar(64)`）与 **60 `user_feedbacks`**；两者已插在迁移计划的 9001 之前，本分支 `CurrentSchemaVersion` 仍取 **9001**。**上游 CHANGELOG 只写了"升至 59"，实际代码是 60**，以代码为准。线上库当前是 55/56/57/58/9001，本轮尚未部署；部署时会补跑 59/60，预期变成 55/56/57/58/59/60/9001 且 9001 的 `applied_at` 不变。
+- 冲突两处：`migrations.go`（保留 `CurrentSchemaVersion = providerEgressMigrationVersion`，计划尾部 59、60 排在 9001 之前）、`backend-database.mdx`（保留本分支 9001 段并补 59/60 说明）。其余自动合并成功：`.env.example`、`CHANGELOG.md`、`cmd/migrate-sqlite-postgres`、`migrations_test.go`、`database/schema.go`、`code-map.mdx`、`features.mdx`、`pending-test.mdx`、`admin-shell.tsx`、`router.tsx`；`UserFeedback` 在 `Models()`／`migrations.go`／SQLite→PostgreSQL 清单三处都登记了。
+- **上游 v1.6.9.1 自身带了一处编译回归**：`5647e6a7` 把 `ChannelRequest.ProxyURL` 改成 `*string`（nil = 未提交、`""` = 清空）并更新了 `admin_channel_test.go`，但漏改 `channel_transfer_test.go:15`，导致该包 `go vet`／`go test` 编不过（`cannot use ... (untyped string constant) as *string`）。本分支按同包已有的 `stringPtr()` 补了这一行，**只动测试文件、生产代码零改动**；上游补齐后这行会自然合并掉。
+- [x] 门禁：后端 `go build ./...`、`go vet ./...`、`go test ./... -count=1` 全 0（补测试前 vet 与 test 均因上述类型错误失败）；前端按合并树重建 web-build 后 `tsc` 0、全量 `bun test` **2785 pass / 14 fail**，失败名单与上一轮 14 条逐字相同。
+- 环境插曲：本轮开工时 Docker Desktop 进程全部退出、引擎不可达，启动 Docker Desktop（未改任何配置）后恢复；启动与验证过程记在上一条。
+- [ ] 部署后核对：59/60 补跑结果与 9001 的 `applied_at`；用户反馈插件（附件上传/收件箱答复/历史归档）、音频波形与 60fps 游标、画布连线反馈、批量上传拖放的浏览器验收。
+- [ ] 画布超限（预提交早退不回滚加载态）上游仍未修，继续等。
