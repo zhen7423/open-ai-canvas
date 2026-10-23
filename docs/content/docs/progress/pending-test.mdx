@@ -3688,4 +3688,7 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - [x] 门禁：后端 `go build ./...`、`go vet ./...`、`go test ./... -count=1` 全 0（补测试前 vet 与 test 均因上述类型错误失败）；前端按合并树重建 web-build 后 `tsc` 0、全量 `bun test` **2785 pass / 14 fail**，失败名单与上一轮 14 条逐字相同。
 - 环境插曲：本轮开工时 Docker Desktop 进程全部退出、引擎不可达，启动 Docker Desktop（未改任何配置）后恢复；启动与验证过程记在上一条。
 - [ ] 部署后核对：59/60 补跑结果与 9001 的 `applied_at`；用户反馈插件（附件上传/收件箱答复/历史归档）、音频波形与 60fps 游标、画布连线反馈、批量上传拖放的浏览器验收。
+- [x] 部署（2026-10-23，LAN 栈）：重建 `open-ai-canvas-backend:lan`（34f46391e2c1）与 `open-ai-canvas-web:lan`（3e0579883552）；停后端 → 卷内第 15 份备份 `pre-v1691-deploy-20261023T031328Z/open_ai_canvas.db`（569 MB）→ **副本预演** `migrate-schema up`/`verify` 均退出 0（副本账本 55/56/57/58/59/60/9001、`user_feedbacks` 建表、9001 的 `applied_at` 未变、`channel_models` 41 行）→ `up -d`。线上核对：`build.version=v1.6.9.1`、`schema current=9001 expected=9001 ready=true`、两容器 healthy；59/60 的 `applied_at=2026-10-23 03:15:04`，9001 仍 `2026-10-12 01:14:32.864590311+00:00`；`user_feedbacks` 已建表、`channel_models` 41 行。宿主机上的预演副本已删除。
+- 两条口径说明：① SQLite 下 `channel_models.protocol` 仍是 `text`——GORM 的 `AlterColumn` 在 SQLite 不会强制 varchar 长度，真正的 `varchar(64)` 只发生在 PostgreSQL；64 字符上限由应用层校验。② 内镜行数 11→8 不是迁移造成：10-22 的备份里还是 11，本轮迁移前线上就已是 8，属保留期清理任务删除到期对象。
+- 启动日志 `stale_orders=9 reserved=0 running=2 uncertain=7` 与部署前一致，没有新增待核对订单。
 - [ ] 画布超限（预提交早退不回滚加载态）上游仍未修，继续等。
