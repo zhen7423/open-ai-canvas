@@ -3704,3 +3704,17 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 两条口径说明：① SQLite 下 `channel_models.protocol` 仍是 `text`——GORM 的 `AlterColumn` 在 SQLite 不会强制 varchar 长度，真正的 `varchar(64)` 只发生在 PostgreSQL；64 字符上限由应用层校验。② 内镜行数 11→8 不是迁移造成：10-22 的备份里还是 11，本轮迁移前线上就已是 8，属保留期清理任务删除到期对象。
 - 启动日志 `stale_orders=9 reserved=0 running=2 uncertain=7` 与部署前一致，没有新增待核对订单。
 - [ ] 画布超限（预提交早退不回滚加载态）上游仍未修，继续等。
+
+## 合并上游 v1.6.9.2（2026-10-23）
+
+- 已合并：`upstream/main` 的 6 个提交（v1.6.9.2）——画布项目资产同步在云端处理中断后自动恢复关联（新增 `project-asset-link-queue` 与 sync 重试队列）、模型选择面板隐藏二级返回标题并恢复渠道名称、审批回执区分"写入完成 / 任务已提交 / 操作拒绝"、`canvas_inspect_image` 改为按 `nodeIds` + `purpose` 批量观察（工具 schema v6→v7）、生成预算明确 0 上限代表不限、关闭短剧制作时同步隐藏侧栏与命令面板入口。上游同时补上了 `channel_transfer_test.go` 的 `ProxyURL` 指针参数，与本分支上一轮的临时补丁**逐字一致**。
+- **零冲突**：`git merge --no-ff` 直接生成合并提交 `1ba082ba`，无需手工解冲突。本批**没有数据库迁移**（`git log 321c18d7..upstream/main -- migrations.go` 为 0），结构仍 9001，线上账本不变。`VERSION` = v1.6.9.2。
+- 门禁：前端重建 web-build 后 `tsc` 0、全量 `bun test` **2789 pass / 14 fail**，名单与上一轮 14 条逐字相同；后端 `go build`/`go vet` 均 0。
+- 后端全量首跑出现**一条合入后新增的随机失败**（`TestCloudAgentMissingCanvasStillCheckpointsMediaFailure`），已定位并修复：
+  - 单跑 PASS、整包 verbose 重跑 `TEST_EXIT=0` → 非必现；`-count=100` 对照：**合并后 4/100 失败、合并前 0/100**。
+  - 在独立 worktree 给 `repository` 的 17 个 `ErrCreationConflict` 返回点插桩，命中点唯一：`repository/cloud_agent.go` 的 `MutateCloudAgent`（`UPDATE … WHERE revision = ?`，0 行即冲突）。
+  - 根因：审批媒体草稿会启动 `approvedMediaWaiters` 异步协程；用例随后又手动把任务置失败/删画布并手动 `advanceCloudAgentByID`，两者抢同一条 run 的 revision。v1.6.9.2 的审批回执改动只改变了时序（提交阶段多算一段 preview），不是逻辑回归；生产里同一 run 只有 waiter 一个推进方，CAS 属设计内保护。
+  - 修法（按裁决"改测试使其确定性"）：在共享 helper `approveAgentMediaDraft` 里 `defer s.closeApprovedCloudAgentMediaWaiters()`（该函数幂等，cancel 后 `Wait()` 协程退出），helper 返回即代表没有 in-flight waiter。只动测试文件，生产代码零改动。修复后两条受影响用例各 `-count=100` 全绿，全量 `go test ./...` 退出 0（提交 `889f71a2`）。
+- 过程插曲：本轮 Docker Desktop 两次自行退出（引擎不可达），均由我重新启动（未改配置）后恢复；诊断用的两个临时 worktree 已删除，主树无插桩残留。
+- [ ] 部署后浏览器验收：画布资产同步断线自动恢复、模型选择二级面板、审批回执三段文案、图片批量观察、0 预算语义。
+- [ ] 画布超限（预提交早退不回滚加载态）上游仍未修，继续等。
