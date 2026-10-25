@@ -236,31 +236,6 @@ export function ModelPicker({
                         })}
                     </div>
                     {optionGroups.filter((group) => group.key === activeGroupKey).map((group) => <section key={group.key} className="canvas-model-picker-group canvas-model-picker-model-pane min-w-0">
-                        <div className="canvas-model-picker-secondary-head">
-                            <button
-                                type="button"
-                                className="canvas-model-picker-back"
-                                aria-label="返回模型列表"
-                                title="返回模型列表"
-                                onClick={() => {
-                                    setActiveGroupKey(null);
-                                    focusMenuOption();
-                                }}
-                            >
-                                <ChevronDown className="canvas-model-picker-brand-arrow" style={{ transform: "rotate(90deg)" }} aria-hidden="true" />
-                            </button>
-                            <span className="min-w-0 flex-1">
-                                <span className="flex items-center gap-1.5 min-w-0">
-                                    <strong className="truncate block">{group.label}</strong>
-                                    {group.scope === "我的模型" ? (
-                                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium leading-none bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25">
-                                            个人渠道
-                                        </span>
-                                    ) : null}
-                                </span>
-                                <small>{group.models.length} 个{group.kind === "product" ? "渠道" : "模型"}{group.scope ? ` · ${group.scope}` : ""}</small>
-                            </span>
-                        </div>
                         <div className="grid min-w-0 gap-1">
                             {group.models.map((modelGroup) => {
                                 const selected = modelGroup.models.includes(current);
@@ -535,13 +510,14 @@ function modelMenuPrice(config: AiConfig, model: string, capability?: ModelCapab
 }
 
 function pickerModelDisplayName(config: AiConfig, model: string, showConfiguredModelName: boolean) {
-    return showConfiguredModelName ? configuredModelDisplayName(config, model) : modelDisplayName(config, model);
+    const name = showConfiguredModelName ? configuredModelDisplayName(config, model) : modelDisplayName(config, model);
+    return isDirectSystemModel(config, model) ? `${name} · ${modelChannelLabel(config, model)}` : name;
 }
 
 function pickerModelOptionLabel(config: AiConfig, model: string, showConfiguredModelName: boolean) {
     const displayName = showConfiguredModelName ? configuredModelDisplayName(config, model) : modelDisplayName(config, model);
     const channel = resolveModelChannel(config, model);
-    return channel.scope === "system" ? displayName : `${displayName}（${channel.name}）`;
+    return channel.scope === "system" ? pickerModelDisplayName(config, model, showConfiguredModelName) : `${displayName}（${channel.name}）`;
 }
 
 function channelTierPriceSummary(
