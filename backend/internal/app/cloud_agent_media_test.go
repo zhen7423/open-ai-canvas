@@ -84,6 +84,10 @@ func agentMediaRun(t *testing.T, s *Service, a cloudAgentMediaArgs, permission s
 
 func approveAgentMediaDraft(t *testing.T, s *Service, runID string) {
 	t.Helper()
+	// 审批后的推进会起异步媒体 waiter，它和用例随后手动改任务状态、手动推进共用同一条
+	// run 的 revision CAS；不收敛就会随机返回 409（实测修复前 4/100）。helper 返回即表示
+	// 没有 in-flight waiter，用例因此可以确定性地自己扮演推进方。
+	defer s.closeApprovedCloudAgentMediaWaiters()
 	run, err := s.CloudAgentRun("user", runID)
 	if err != nil {
 		t.Fatal(err)
