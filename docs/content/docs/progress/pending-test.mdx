@@ -3717,4 +3717,5 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
   - 修法（按裁决"改测试使其确定性"）：在共享 helper `approveAgentMediaDraft` 里 `defer s.closeApprovedCloudAgentMediaWaiters()`（该函数幂等，cancel 后 `Wait()` 协程退出），helper 返回即代表没有 in-flight waiter。只动测试文件，生产代码零改动。修复后两条受影响用例各 `-count=100` 全绿，全量 `go test ./...` 退出 0（提交 `889f71a2`）。
 - 过程插曲：本轮 Docker Desktop 两次自行退出（引擎不可达），均由我重新启动（未改配置）后恢复；诊断用的两个临时 worktree 已删除，主树无插桩残留。
 - [ ] 部署后浏览器验收：画布资产同步断线自动恢复、模型选择二级面板、审批回执三段文案、图片批量观察、0 预算语义。
+- [x] 部署（2026-10-25，LAN 栈）：重建 `open-ai-canvas-backend:lan`（6c5c554849e6）与 `open-ai-canvas-web:lan`（16cfe0b61383）；停后端 → 卷内第 16 份备份 `pre-v1692-deploy-20261025T234944Z/open_ai_canvas.db`（569.7 MB）→ `up -d`。本轮无迁移（不跑补录），核对账本 57/58/59/60/9001 的 `applied_at` **全部未变**（58 = 2026-10-22 01:01:56、59/60 = 2026-10-23 03:15:04、9001 = 2026-10-12 01:14:32）；`build.version=v1.6.9.2`、`schema current=9001 expected=9001 ready=true`、两容器 healthy，启动日志 `stale_orders=9 reserved=0 running=2 uncertain=7` 与部署前一致。
 - [ ] 画布超限（预提交早退不回滚加载态）上游仍未修，继续等。
