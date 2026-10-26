@@ -8,15 +8,21 @@ import { Select } from "@/components/ui/base/select";
 export function useSkillRuntimeCatalog() {
     const [skills, setSkills] = useState<Skill[]>([]);
     const [loading, setLoading] = useState(true);
+    // 读失败和技能库为空要分开：读失败时不能据此清空已选。
+    const [ready, setReady] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
         listAddedSkills()
             .then((result) => {
-                if (!cancelled) setSkills(result.skills.filter((skill) => skill.isAdded));
+                if (cancelled) return;
+                setSkills(result.skills.filter((skill) => skill.isAdded));
+                setReady(true);
             })
             .catch(() => {
-                if (!cancelled) setSkills([]);
+                if (cancelled) return;
+                setSkills([]);
+                setReady(false);
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
@@ -26,7 +32,7 @@ export function useSkillRuntimeCatalog() {
         };
     }, []);
 
-    return { skills, loading };
+    return { skills, loading, ready };
 }
 
 export function SkillRuntimePicker({ skills, loading, value, onChange, placeholder = "选择本次生成使用的技能", profile = "canvas" }: { skills: Skill[]; loading?: boolean; value: string[]; onChange: (skillIds: string[]) => void; placeholder?: string; profile?: SkillRuntimeProfile }) {

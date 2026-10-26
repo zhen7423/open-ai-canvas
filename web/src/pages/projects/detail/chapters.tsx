@@ -70,6 +70,7 @@ import {
 } from "@/services/api/projects";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { listGenerationTasks, queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
+import { reconcileSkillSelection } from "@/services/skill-runtime";
 
 import { formatCount, formatTime, statusLabel, type ProjectDetailViewProps } from "./shared";
 import { chapterStoryboardAssets, chapterStoryboardCharacters, chapterStoryboardReplaceImpact, storyboardRowsToProjectShots } from "./chapter-storyboard-production";
@@ -109,7 +110,15 @@ export default function ProjectChaptersView({ detail, refreshProject }: ProjectD
     const [operationNow, setOperationNow] = useState(() => Date.now());
     const [selectedTextModel, setSelectedTextModel] = useState("");
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
-    const { skills: availableSkills, loading: skillsLoading } = useSkillRuntimeCatalog();
+    const { skills: availableSkills, loading: skillsLoading, ready: skillsReady } = useSkillRuntimeCatalog();
+    // 本页会留着已删除技能的 ID，按当前技能库剔除。
+    useEffect(() => {
+        if (!skillsReady) return;
+        const reconciled = reconcileSkillSelection(selectedSkillIds, availableSkills);
+        if (!reconciled.removedSkillIds.length) return;
+        setSelectedSkillIds(reconciled.skillIds);
+        void message.warning(`已取消 ${reconciled.removedSkillIds.length} 个已失效的技能：该技能已被删除或取消安装`);
+    }, [availableSkills, message, selectedSkillIds, skillsReady]);
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const listRef = useRef<HTMLDivElement>(null);

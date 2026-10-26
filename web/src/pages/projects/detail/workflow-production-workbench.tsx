@@ -40,7 +40,7 @@ import {
     type WorkflowStep,
 } from "@/services/api/projects";
 import { resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey } from "@/services/api/resources";
-import { skillRuntime } from "@/services/skill-runtime";
+import { reconcileSkillSelection, skillRuntime } from "@/services/skill-runtime";
 import { configuredModelMatchesCapability, modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { SkillRuntimePicker, useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
@@ -128,7 +128,15 @@ export default function WorkflowProductionWorkbench(props: Props) {
     const [resolution, setResolution] = useState(effectiveConfig.vquality || "720");
     const [imageQuality, setImageQuality] = useState(effectiveConfig.quality || "auto");
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
-    const { skills: availableSkills, loading: skillsLoading } = useSkillRuntimeCatalog();
+    const { skills: availableSkills, loading: skillsLoading, ready: skillsReady } = useSkillRuntimeCatalog();
+    // 本页会留着已删除技能的 ID，按当前技能库剔除。
+    useEffect(() => {
+        if (!skillsReady) return;
+        const reconciled = reconcileSkillSelection(selectedSkillIds, availableSkills);
+        if (!reconciled.removedSkillIds.length) return;
+        setSelectedSkillIds(reconciled.skillIds);
+        void message.warning(`已取消 ${reconciled.removedSkillIds.length} 个已失效的技能：该技能已被删除或取消安装`);
+    }, [availableSkills, message, selectedSkillIds, skillsReady]);
     const shotAssetReferenceContext = useMemo(() => buildShotAssetReferenceContext(detail, selectedShot?.id || ""), [detail, selectedShot?.id]);
     const referenceByVersionId = useMemo(() => {
         const references = (detail.shotReferences || []).filter((reference) => reference.shotId === selectedShot?.id && reference.role === "reference" && reference.status === "linked");
