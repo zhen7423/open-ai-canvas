@@ -406,11 +406,11 @@ test("provider egress settings inset every section body like its sibling pages",
     expect(page.match(/<SettingsSectionCard/g)?.length).toBe(3);
 
     const egressInset = sourceSection(adminCss, ".admin-egress-form-section {", ".admin-egress-settings .admin-settings-section {");
-    expect(egressInset).toContain("padding: 18px 20px 4px;");
-    // 取值必须与相邻设置页同源，任何一页单独改数就会走查不齐。
+    expect(egressInset).toContain("padding: 16px 20px 4px;");
+    // 取值必须与相邻设置页同源，任何一页单独改数就会走查不齐（上游 v1.7.0 全站统一为 16px 上内缩）。
     const css = compactSource(adminCss);
-    expect(css).toContain(".admin-ark-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; padding: 18px 20px 4px;");
-    expect(css).toContain(".admin-storage-form-section { padding: 18px 20px 4px; }");
+    expect(css).toContain(".admin-ark-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; padding: 16px 20px 4px;");
+    expect(css).toContain(".admin-storage-form-section { padding: 16px 20px 4px; }");
 });
 
 test("provider egress settings carry the delivery form switch beside the master toggle", async () => {
