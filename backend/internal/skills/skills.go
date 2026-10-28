@@ -84,10 +84,6 @@ type SkillItem struct {
 	IsAdded           bool                 `json:"isAdded"`
 	IsOwner           bool                 `json:"isOwner"`
 	LibraryCategoryID string               `json:"libraryCategoryId,omitempty"`
-	// PackKey 是套装标识（同一 GitHub 仓库来源）；PackAutoAdded 只在「本次加入连带启用了
-	// 配套」时返回，供前端如实报告连带了几个、是哪几个，不谎称整套都是用户自己点的。
-	PackKey       string               `json:"packKey,omitempty"`
-	PackAutoAdded []SkillPackCompanion `json:"packAutoAdded,omitempty"`
 }
 
 // AddedSkillReference is the small contract used by the runtime catalog.
@@ -321,53 +317,28 @@ func (s *Service) DeleteBuiltinSkill(actor *model.User, id string) error {
 	return os.RemoveAll(filepath.Join(s.dataDir, "skill-packages", id))
 }
 
-// SetSkillAdded 把技能加入或移出该用户的技能库。
-//
-// 加入按「套装」级联：同一 GitHub 仓库来源的公开已上架配套一起启用（只写该用户自己的
-// 技能库状态），主技能与配套落在同一事务里——要么整套启用，要么一条都不写，
-// 避免出现「总控已启用、子技能启用了一半」这种既骗了前端又没法复现的中间态。
-// 自有技能走同一条级联：作者本人的技能恒在库中不需要写状态，但同套、由别人安装的配套
-// 仍然要连带启用，否则「谁装了总控谁就得逐个开子技能」。
-//
-// 移除不级联：取消勾选一个配套不该把整套踢出技能库；要整撤就逐个撤，
-// 连带启用了哪些在加入时就已如实报给用户。
 func (s *Service) SetSkillAdded(userID string, id string, added bool) (*SkillItem, error) {
 	skill, err := s.visibleSkill(userID, id)
 	if err != nil {
 		return nil, err
 	}
-	if skill.OwnerID == userID && !added {
-		return nil, kernel.BadAuthRequest("自己创建的技能始终保留在我的技能中")
-	}
-	var companionStates []*model.UserSkillState
-	var companions []SkillPackCompanion
-	if added {
-		companionStates, companions, err = s.packStatesForAdd(userID, skill)
-		if err != nil {
-			return nil, err
+	if skill.OwnerID == userID {
+		if !added {
+			return nil, kernel.BadAuthRequest("自己创建的技能始终保留在我的技能中")
 		}
+		return s.SkillDetail(userID, id)
 	}
-	if skill.OwnerID != userID {
-		state, err := s.skillState(userID, id)
-		if err != nil {
-			return nil, err
-		}
-		state.Added = added
-		state.InstalledVersionID = skill.CurrentVersionID
-		state.AutoUpdate = skill.AutoUpdate
-		companionStates = append([]*model.UserSkillState{state}, companionStates...)
-	}
-	if len(companionStates) > 0 {
-		if err := s.repo.SetUserSkillAddedBatch(companionStates); err != nil {
-			return nil, err
-		}
-	}
-	item, err := s.SkillDetail(userID, id)
+	state, err := s.skillState(userID, id)
 	if err != nil {
 		return nil, err
 	}
-	item.PackAutoAdded = companions
-	return item, nil
+	state.Added = added
+	state.InstalledVersionID = skill.CurrentVersionID
+	state.AutoUpdate = skill.AutoUpdate
+	if err := s.repo.SetUserSkillAdded(state); err != nil {
+		return nil, err
+	}
+	return s.SkillDetail(userID, id)
 }
 
 func (s *Service) SetSkillLiked(userID string, id string, liked bool) (*SkillItem, error) {
@@ -447,7 +418,7 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 			LikeCount: metric.LikeCount, IsLike: state.Liked, OwnerUID: skill.OwnerID,
 			EffectiveUser: SkillEffectiveUser{Name: ownerName, AvatarURL: ownerAvatarURL, UID: skill.OwnerID}, ShowcaseMedia: showcaseMedia,
 			AddedCount: metric.AddedCount, ExtraInfo: skill.ExtraInfo, IsAdded: state.Added || skill.OwnerID == userID, IsOwner: skill.OwnerID == userID,
-			LibraryCategoryID: state.LibraryCategoryID, PackKey: skillPackKey(&skill),
+			LibraryCategoryID: state.LibraryCategoryID,
 		})
 	}
 	return items, nil

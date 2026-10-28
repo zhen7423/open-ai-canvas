@@ -142,13 +142,7 @@ func compileCloudAgentPolicies(req CloudAgentRequest, agentName string, skills [
 	}
 	manifests := make([]map[string]any, 0, len(skills))
 	for _, skill := range skills {
-		manifest := map[string]any{"skillId": skill.ID, "name": skill.Name, "description": cloudAgentSkillManifestDescription(skill.Description), "version": skill.Version, "hash": skill.Hash, "entryPath": cloudAgentSkillEntryPath, "files": cloudAgentSkillPaths(skill)}
-		if skill.AttachedVia != "" {
-			// 套装自动附带：告诉模型这条不是用户逐个勾选的，是同套（如同一 GitHub 仓库）
-			// 一起带进来的配套，读取权限与勾选技能一致。
-			manifest["attachedVia"] = skill.AttachedVia
-		}
-		manifests = append(manifests, manifest)
+		manifests = append(manifests, map[string]any{"skillId": skill.ID, "name": skill.Name, "description": cloudAgentSkillManifestDescription(skill.Description), "version": skill.Version, "hash": skill.Hash, "entryPath": cloudAgentSkillEntryPath, "files": cloudAgentSkillPaths(skill)})
 	}
 	context["skills"] = manifests
 	layers := make([]map[string]any, 0, len(profile.Layers))

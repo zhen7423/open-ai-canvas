@@ -351,13 +351,9 @@ func cloudAgentHandleSkillReadFile(repo *repository.Repository, userID string, s
 	if args.Offset < 0 || (args.Path == "" && args.Offset != 0) {
 		return nil, BadAuthRequest("技能读取偏移无效")
 	}
-	// 套装路径别名：套装总控把配套写成 sd-xxx-engine/references/y.md 这种「技能名/包内路径」，
-	// 而平台按 skillId + 包内路径寻址。首段命中本轮某个技能名时改写到那个技能上，
-	// 改写后仍以原有快照校验为准（不在快照里的路径照样读不到）。
-	skillID, filePath := cloudAgentResolveSkillPath(state.Skills, args.SkillID, args.Path)
 	for _, skill := range state.Skills {
-		if skill.ID == skillID {
-			if filePath == "" {
+		if skill.ID == args.SkillID {
+			if args.Path == "" {
 				return map[string]any{"version": skill.Version, "entryPath": cloudAgentSkillEntryPath, "files": cloudAgentSkillPaths(skill), "guidance": "先读取 SKILL.md，再只读取入口明确引用且当前任务需要的参考文件。只能读取 files 中列出的路径；不要重复列目录或猜测路径"}, nil
 			}
 			if service != nil {
@@ -368,13 +364,13 @@ func cloudAgentHandleSkillReadFile(repo *repository.Repository, userID string, s
 				if !detail.IsAdded || detail.Status != 1 || detail.VersionID != skill.Version || detail.ContentHash != skill.Hash {
 					return nil, creationConflict("技能已更新或不可用，请重试")
 				}
-				if filePath == cloudAgentSkillEntryPath {
-					return cloudAgentSkillPage(skill.Version, filePath, detail.Instruction, args.Offset)
+				if args.Path == cloudAgentSkillEntryPath {
+					return cloudAgentSkillPage(skill.Version, args.Path, detail.Instruction, args.Offset)
 				}
-				if _, ok := skill.Files[filePath]; !ok {
+				if _, ok := skill.Files[args.Path]; !ok {
 					return nil, BadAuthRequest("参考文件未包含在本轮固定快照中")
 				}
-				file, err := service.SkillPackageFile(userID, skill.ID, filePath)
+				file, err := service.SkillPackageFile(userID, skill.ID, args.Path)
 				if err != nil {
 					return nil, err
 				}
@@ -388,13 +384,13 @@ func cloudAgentHandleSkillReadFile(repo *repository.Repository, userID string, s
 				if !latest.IsAdded || latest.Status != 1 || latest.VersionID != skill.Version || latest.ContentHash != skill.Hash {
 					return nil, creationConflict("技能已更新或不可用，请重试")
 				}
-				return cloudAgentSkillPage(skill.Version, filePath, file.Content, args.Offset)
+				return cloudAgentSkillPage(skill.Version, args.Path, file.Content, args.Offset)
 			}
-			if filePath == cloudAgentSkillEntryPath && strings.TrimSpace(skill.Instruction) != "" {
-				return map[string]any{"version": skill.Version, "path": filePath, "content": skill.Instruction}, nil
+			if args.Path == cloudAgentSkillEntryPath && strings.TrimSpace(skill.Instruction) != "" {
+				return map[string]any{"version": skill.Version, "path": args.Path, "content": skill.Instruction}, nil
 			}
-			if content, ok := skill.Files[filePath]; ok && content != "" {
-				return map[string]any{"version": skill.Version, "path": filePath, "content": content}, nil
+			if content, ok := skill.Files[args.Path]; ok && content != "" {
+				return map[string]any{"version": skill.Version, "path": args.Path, "content": content}, nil
 			}
 			return nil, BadAuthRequest(fmt.Sprintf("参考文件未包含在本轮固定快照中；可读路径：%s。不要重试此路径", strings.Join(cloudAgentSkillPaths(skill), ", ")))
 		}

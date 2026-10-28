@@ -24,12 +24,6 @@ type cloudAgentSkill struct {
 	Hash        string            `json:"hash"`
 	Instruction string            `json:"instruction,omitempty"`
 	Files       map[string]string `json:"files,omitempty"`
-	// AttachedVia 标记该技能怎样进入本轮："pack" 表示套装自动附带（用户只勾了同套的
-	// 另一个技能）。它只是给模型看的来源标注，读取权限与逐个勾选的技能完全一致。
-	AttachedVia string `json:"attachedVia,omitempty"`
-	// Pack 是该技能所属套装的来源地址，空表示不参与套装。
-	// 路径别名靠它把「技能名/路径」限定在同套装内解析，别的包里恰好同名的技能不能劫持寻址。
-	Pack string `json:"pack,omitempty"`
 }
 
 const cloudAgentSkillEntryPath = "SKILL.md"
@@ -50,52 +44,6 @@ func cloudAgentSkillPaths(skill cloudAgentSkill) []string {
 	}
 	sort.Strings(paths)
 	return paths
-}
-
-// cloudAgentResolveSkillPath 解析套装写法「<技能名>/<包内路径>」。
-//
-// 套装总控的必读清单按「sd-xxx-engine/references/y.md」这种跨目录相对路径书写，
-// 而平台按 skillId + 包内路径寻址。改写只在三个条件同时成立时发生：① 首段等于本轮
-// 某个快照技能的名字（忽略大小写与首尾空格）；② 那个技能要么就是被勾选的这只，要么
-// 与它同属一个套装（Pack 相同）——别的仓库里恰好同名的技能不能劫持这次寻址，否则读到的
-// 会是另一只技能的版本和内容；③ 剩余路径确在该技能的可读清单里。
-// 同名候选多于一个时按「歧义」处理，不改写：宁后可读失败让模型改用真实 skillId，
-// 也不静默落到另一只技能上。其余情况原样返回，由调用方继续按固定快照校验——
-// 别名只负责寻址，不放宽权限。
-func cloudAgentResolveSkillPath(skills []cloudAgentSkill, skillID string, filePath string) (string, string) {
-	head, rest, split := strings.Cut(strings.TrimSpace(filePath), "/")
-	head = strings.TrimSpace(head)
-	rest = strings.TrimSpace(rest)
-	if !split || head == "" || rest == "" {
-		return skillID, filePath
-	}
-	pack := ""
-	for _, candidate := range skills {
-		if candidate.ID == skillID {
-			pack = candidate.Pack
-			break
-		}
-	}
-	matches := make([]cloudAgentSkill, 0, 2)
-	for _, candidate := range skills {
-		if !strings.EqualFold(strings.TrimSpace(candidate.Name), head) {
-			continue
-		}
-		if candidate.ID == skillID || (pack != "" && candidate.Pack == pack) {
-			matches = append(matches, candidate)
-		}
-	}
-	if len(matches) != 1 {
-		return skillID, filePath
-	}
-	candidate := matches[0]
-	if rest == cloudAgentSkillEntryPath {
-		return candidate.ID, rest
-	}
-	if _, ok := candidate.Files[rest]; ok {
-		return candidate.ID, rest
-	}
-	return skillID, filePath
 }
 
 const (
@@ -397,105 +345,45 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 	return map[string]any{"matches": entries, "total": len(ranked), "keyword": keyword, "guidance": guidance}, nil
 }
 
-// cloudAgentPackAttachMax 是**本轮快照的技能总数**上限（勾选的 + 套装自动附带的合计）。
-// skills 域另有一个 32（skillPackCompanionLimit），那一个管「一次级联启用带出多少条配套」，
-// 语义不同：这里是 13 个技能一起挂上就没问题，但 33 个就会被截断——超上限说明该仓库装的
-// 不是同一套。两处常数各自的含义写清楚，别当成同一个数互相「对齐」。
-const cloudAgentPackAttachMax = 32
-
-const cloudAgentAttachedViaPack = "pack"
-
-// cloudAgentSkills 冻结本轮可读的技能快照。
-//
-// 两条来源：① 请求里逐个勾选的技能——不满足「已安装且启用」直接报错，与改动前一致；
-// ② 套装自动附带——勾选的技能若来自某个 GitHub 仓库套装，把该用户技能库里同套的其余
-// 配套一起带进来，让「只启用总控」也能读到配套子技能。②走的仍是同一个快照构造函数
-// （内含同一条启用边界），并且只读不写：用户没启用的配套不会因此变得可读。
 func (s *Service) cloudAgentSkills(userID string, ids []string) ([]cloudAgentSkill, error) {
-	snapshots := make([]cloudAgentSkill, 0, len(ids))
-	seen := make(map[string]bool, len(ids))
-	packMasters := make([]string, 0, len(ids))
+	snapshots := []cloudAgentSkill{}
 	for _, id := range ids {
-		snapshot, detail, err := s.cloudAgentSkillSnapshot(userID, id)
+		skill, err := s.SkillDetail(userID, id)
 		if err != nil {
 			return nil, err
 		}
-		if seen[id] {
-			continue
+		if !skill.IsAdded || skill.Status != 1 {
+			return nil, BadAuthRequest("只能使用用户技能库中已安装且启用的技能")
 		}
-		seen[id] = true
-		snapshots = append(snapshots, *snapshot)
-		if detail.PackSourceURL() != "" {
-			packMasters = append(packMasters, id)
-		}
-	}
-	for _, masterID := range packMasters {
-		if len(snapshots) >= cloudAgentPackAttachMax {
-			break
-		}
-		companions, err := s.AddedPackCompanions(userID, masterID)
+		// Skill content is loaded only after the model explicitly calls
+		// skill_read_file; keep the run context to stable metadata and paths.
+		// The description is public metadata (market listing) and lets the
+		// model route between activated skills without reading any body.
+		snapshot := cloudAgentSkill{ID: id, Name: skill.SkillName, Description: skill.Description, Version: skill.VersionID, Hash: skill.ContentHash, Files: map[string]string{cloudAgentSkillEntryPath: ""}}
+		files, err := s.SkillPackageFiles(userID, id)
 		if err != nil {
-			// 附带是增益，不是前置条件：查不到配套就按用户勾选的那几个跑。
-			continue
+			return nil, err
 		}
-		for _, companion := range companions {
-			if len(snapshots) >= cloudAgentPackAttachMax {
-				break
-			}
-			if seen[companion.SkillID] {
+		for _, file := range files {
+			// The entry is listed separately; file bodies are fetched on demand.
+			if file.Path == cloudAgentSkillEntryPath {
 				continue
 			}
-			snapshot, _, err := s.cloudAgentSkillSnapshot(userID, companion.SkillID)
-			if err != nil {
-				// 配套在读取时被人删除或刚更新：跳过这一个，不能因此打回整轮请求。
+			// Executable/binary packages are never executed; text references are data only.
+			if !strings.HasSuffix(file.Path, ".md") && !strings.HasSuffix(file.Path, ".txt") && !strings.HasSuffix(file.Path, ".json") {
 				continue
 			}
-			seen[companion.SkillID] = true
-			snapshot.AttachedVia = cloudAgentAttachedViaPack
-			snapshots = append(snapshots, *snapshot)
+			snapshot.Files[file.Path] = ""
 		}
+		// Detect an update during package reads instead of mixing two versions.
+		latest, err := s.SkillDetail(userID, id)
+		if err != nil {
+			return nil, err
+		}
+		if latest.VersionID != skill.VersionID || latest.ContentHash != skill.ContentHash {
+			return nil, creationConflict("技能在读取时已更新，请重试")
+		}
+		snapshots = append(snapshots, snapshot)
 	}
 	return snapshots, nil
-}
-
-// cloudAgentSkillSnapshot 冻结单个技能本轮可读的内容：稳定元数据 + 文件路径清单，
-// 正文一律等模型显式调用 skill_read_file 再取（技能内容永不整体内联）。
-// 同时返回详情，调用方据此判断该技能属于哪个套装。
-func (s *Service) cloudAgentSkillSnapshot(userID string, id string) (*cloudAgentSkill, *SkillItem, error) {
-	skill, err := s.SkillDetail(userID, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !skill.IsAdded || skill.Status != 1 {
-		return nil, nil, BadAuthRequest("只能使用用户技能库中已安装且启用的技能")
-	}
-	// Skill content is loaded only after the model explicitly calls
-	// skill_read_file; keep the run context to stable metadata and paths.
-	// The description is public metadata (market listing) and lets the
-	// model route between activated skills without reading any body.
-	snapshot := &cloudAgentSkill{ID: id, Name: skill.SkillName, Description: skill.Description, Version: skill.VersionID, Hash: skill.ContentHash, Pack: skill.PackSourceURL(), Files: map[string]string{cloudAgentSkillEntryPath: ""}}
-	files, err := s.SkillPackageFiles(userID, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, file := range files {
-		// The entry is listed separately; file bodies are fetched on demand.
-		if file.Path == cloudAgentSkillEntryPath {
-			continue
-		}
-		// Executable/binary packages are never executed; text references are data only.
-		if !strings.HasSuffix(file.Path, ".md") && !strings.HasSuffix(file.Path, ".txt") && !strings.HasSuffix(file.Path, ".json") {
-			continue
-		}
-		snapshot.Files[file.Path] = ""
-	}
-	// Detect an update during package reads instead of mixing two versions.
-	latest, err := s.SkillDetail(userID, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	if latest.VersionID != skill.VersionID || latest.ContentHash != skill.ContentHash {
-		return nil, nil, creationConflict("技能在读取时已更新，请重试")
-	}
-	return snapshot, skill, nil
 }

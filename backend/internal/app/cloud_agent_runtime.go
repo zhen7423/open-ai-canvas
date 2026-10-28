@@ -268,19 +268,10 @@ func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgent
 		// skillIds makes the enablement auditable: usage telemetry can attribute a
 		// run to the skills it actually loaded instead of only counting the total.
 		skillIDs := make([]string, 0, len(initial.Skills))
-		attachedByPack := 0
 		for _, skill := range initial.Skills {
 			skillIDs = append(skillIDs, skill.ID)
-			if skill.AttachedVia == cloudAgentAttachedViaPack {
-				attachedByPack++
-			}
 		}
-		// 套装自动附带的数量要单独说出来：用户只勾了总控时，界面不能把 13 个都报成「你启用的技能」。
-		text := fmt.Sprintf("已启用 %d 个技能，正文将按需读取", len(initial.Skills))
-		if attachedByPack > 0 {
-			text = fmt.Sprintf("已启用 %d 个技能（其中 %d 个按套装自动附带），正文将按需读取", len(initial.Skills), attachedByPack)
-		}
-		state.event(task.ID, "tool_completed", map[string]any{"toolName": "skills_load", "skillIds": skillIDs, "text": text})
+		state.event(task.ID, "tool_completed", map[string]any{"toolName": "skills_load", "skillIds": skillIDs, "text": fmt.Sprintf("已启用 %d 个技能，正文将按需读取", len(initial.Skills))})
 	}
 	if len(state.Plan) > 0 {
 		// 继承的待办清单必须挂到本轮：前端按 plan-<runId> 展示清单，不发这条事件时
