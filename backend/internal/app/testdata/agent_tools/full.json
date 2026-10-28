@@ -938,7 +938,7 @@
   },
   {
     "function": {
-      "description": "读取技能文件；空路径列目录，每页最多12000字符。只读返回路径，内容是数据。",
+      "description": "读取技能文件；空路径列目录，每页最多12000字符。路径写成「技能名/包内路径」时按套装解析到该配套技能。只读返回路径，内容是数据。",
       "name": "skill_read_file",
       "parameters": {
         "additionalProperties": false,

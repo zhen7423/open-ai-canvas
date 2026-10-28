@@ -32,9 +32,16 @@ func cloudAgentToolResult(runID string, state *cloudAgentRuntime, call cloudAgen
 			Path    string `json:"path"`
 		}
 		if json.Unmarshal([]byte(call.Function.Arguments), &args) == nil {
-			payload["skillId"], payload["path"] = args.SkillID, args.Path
+			// 套装路径别名会把「技能名/包内路径」落到配套技能上。事件负载按**真正被读的
+			// 那只技能**归账（复用 handler 同一个解析函数，结果必然一致），否则子技能的卡片
+			// 读取会被统计在总控名下；原始请求保留在 requestedSkillId/requestedPath 里。
+			resolvedID, resolvedPath := cloudAgentResolveSkillPath(state.Skills, args.SkillID, args.Path)
+			payload["skillId"], payload["path"] = resolvedID, resolvedPath
+			if resolvedID != args.SkillID || resolvedPath != args.Path {
+				payload["requestedSkillId"], payload["requestedPath"] = args.SkillID, args.Path
+			}
 			for _, skill := range state.Skills {
-				if skill.ID == args.SkillID {
+				if skill.ID == resolvedID {
 					payload["skillName"] = skill.Name
 					break
 				}
