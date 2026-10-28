@@ -346,8 +346,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             presetApplyingRef.current = token;
             setPresetApplyingId(skill.skillId);
             try {
+                let cascadedCount = 0;
                 if (!installedSkillIds.has(skill.skillId)) {
-                    await addSkill(skill.skillId);
+                    const added = await addSkill(skill.skillId);
+                    cascadedCount = added.skill.packAutoAdded?.length || 0;
                     if (!isCurrent()) return;
                 }
                 const refreshed = await listAddedSkills();
@@ -361,7 +363,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     appendUniqueMessage(current, {
                         id: `skill-${skill.skillId}-${Date.now()}`,
                         role: "system",
-                        text: `已把「${skill.skillName}」挂到本会话。用哪张卡交给 Agent 按任务检索。`,
+                        text: `已把「${skill.skillName}」挂到本会话${cascadedCount ? `，并连带启用套装内 ${cascadedCount} 个配套（本轮自动附带，无需逐个勾选）` : ""}。用哪张卡交给 Agent 按任务检索。`,
                     }),
                 );
             } catch (cause) {
@@ -1142,6 +1144,20 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             setSkills((current) => [...current.filter((item) => item.skillId !== skill.skillId), result.skill]);
             setMarketSkills((current) => current.map((item) => (item.skillId === skill.skillId ? result.skill : item)));
             setSelectedSkillIds((current) => (current.includes(skill.skillId) ? current : [...current, skill.skillId]));
+            const cascaded = result.skill.packAutoAdded || [];
+            if (cascaded.length) {
+                // 套装级联启用：技能库必须重新拉一次，否则「已安装」列表只显示用户点的那一个，
+                // 连带启用的配套看起来像没生效。勾选状态不动——配套由后端按套装自动附带。
+                const refreshed = await listAddedSkills();
+                setSkills(refreshed.skills);
+                setMessages((current) =>
+                    appendUniqueMessage(current, {
+                        id: `skill-pack-${Date.now()}`,
+                        role: "system",
+                        text: `已连带启用套装内 ${cascaded.length} 个配套技能（${cascaded.map((item) => item.skillName).join("、")}），本轮会自动附带，无需逐个勾选。`,
+                    }),
+                );
+            }
         } catch (cause) {
             setMessages((current) => appendAgentError(current, `skill-error-${Date.now()}`, cause, "添加 Skill 失败"));
         }

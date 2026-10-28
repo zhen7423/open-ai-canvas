@@ -582,7 +582,8 @@ export default function SkillWorkbenchPage() {
         try {
             const result = await addSkill(skill.skillId);
             setSkill((current) => (current ? { ...current, ...result.skill } : result.skill));
-            message.success("已加入我的技能");
+            const cascaded = result.skill.packAutoAdded?.length || 0;
+            message.success(cascaded ? `已加入我的技能，并连带启用套装内 ${cascaded} 个配套` : "已加入我的技能");
         } catch (error) {
             message.error(errorMessage(error, "加入技能失败"));
         } finally {

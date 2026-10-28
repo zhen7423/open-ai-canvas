@@ -56,7 +56,13 @@ export type Skill = {
     isAdded: boolean;
     isOwner: boolean;
     libraryCategoryId?: string;
+    /** 套装标识（同一 GitHub 仓库来源）；非套装技能为空。 */
+    packKey?: string;
+    /** 仅「加入技能」响应里出现：本次连带启用的同套装配套。 */
+    packAutoAdded?: SkillPackCompanion[];
 };
+
+export type SkillPackCompanion = { skillId: string; skillName: string };
 
 /** /skills/added 只返回运行时目录需要的引用字段，不携带编辑器和同步详情。 */
 export type AddedSkillReference = Pick<Skill, "skillId" | "skillName" | "description" | "versionId" | "version" | "tag" | "isLike" | "isAdded" | "isOwner" | "libraryCategoryId">;

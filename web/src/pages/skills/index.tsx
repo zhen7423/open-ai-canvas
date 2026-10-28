@@ -238,8 +238,9 @@ export default function SkillsPage() {
         try {
             const result = skill.isAdded ? await removeSkill(skill.skillId) : await addSkill(skill.skillId);
             patchSkill(result.skill);
-            message.success(result.skill.isAdded ? "已加入我的技能" : "已从我的技能移除");
-            if (scope === "mine") reload();
+            const cascaded = result.skill.packAutoAdded?.length || 0;
+            message.success(result.skill.isAdded ? (cascaded ? `已加入我的技能，并连带启用套装内 ${cascaded} 个配套` : "已加入我的技能") : "已从我的技能移除（套装配套不会一起移除）");
+            if (cascaded || scope === "mine") reload();
             else refreshCounts();
         } catch (error) {
             message.error(error instanceof Error ? error.message : "技能状态更新失败");
