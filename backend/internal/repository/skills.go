@@ -197,11 +197,24 @@ func (r *Repository) UserSkillStatesBySkillIDs(userID string, skillIDs []string)
 	return states, err
 }
 
-func (r *Repository) SetUserSkillAdded(state *model.UserSkillState) error {
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}, {Name: "skill_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"added", "installed_version_id", "auto_update", "library_category_id", "updated_at"}),
-	}).Create(state).Error
+// SetUserSkillAddedBatch 把整批加入状态放在同一个事务里写：套装级联启用要么全部落地，
+// 要么全部不落地，不能出现「总控已启用、子技能启用了一半」的口径。
+// 单条启用也走这里（长度为 1 的批次）——不再保留只写一行的版本，避免出现两条口径不同的写路径。
+func (r *Repository) SetUserSkillAddedBatch(states []*model.UserSkillState) error {
+	if len(states) == 0 {
+		return nil
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for _, state := range states {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "user_id"}, {Name: "skill_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"added", "installed_version_id", "auto_update", "library_category_id", "updated_at"}),
+			}).Create(state).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *Repository) SetUserSkillLiked(state *model.UserSkillState) error {

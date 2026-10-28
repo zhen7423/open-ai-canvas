@@ -38,6 +38,7 @@ type (
 	SkillPackageEditRequest               = skills.SkillPackageEditRequest
 	SkillPackageEditResult                = skills.SkillPackageEditResult
 	SkillPreset                           = skills.SkillPreset
+	SkillPackCompanion                    = skills.SkillPackCompanion
 )
 
 func (s *Service) skillDomain() *skills.Service {
@@ -105,6 +106,12 @@ func (s *Service) IsNotBuiltinSkill(err error) bool {
 
 func (s *Service) SetSkillAdded(userID string, id string, added bool) (*SkillItem, error) {
 	return s.skillDomain().SetSkillAdded(userID, id, added)
+}
+
+// AddedPackCompanions 返回该用户技能库里与指定技能同套装的其余配套（按名称排序）。
+// 只包含「已加入 + 已上架 + 可见」的技能，本轮附带不会绕过启用边界。
+func (s *Service) AddedPackCompanions(userID string, id string) ([]SkillPackCompanion, error) {
+	return s.skillDomain().AddedPackCompanions(userID, id)
 }
 
 func (s *Service) SetSkillLiked(userID string, id string, liked bool) (*SkillItem, error) {
