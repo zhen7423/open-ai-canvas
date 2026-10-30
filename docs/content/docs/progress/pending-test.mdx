@@ -4308,3 +4308,15 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - [x] 门禁：后端 `go build ./...`=0、`go vet ./internal/...`=0、`go test -count=1 ./internal/...`=0（34 包全 ok，`internal/app` 412.2s）；前端重建 `yingce-webbuild:merge`（`COPY web` 与 `vite build` 都是 DONE，不是 CACHED）后 `tsc --noEmit`=0、全量 `bun test` **2828 pass / 15 fail**（2843 tests）。合并前基线 `490c8667` 同镜像只叠 `src`+`test` 得 **2828 pass / 15 fail**（2843 tests）。
 - 失败名单双向差集为空：15 条红两侧逐条同名（9 formatting gate + 2 commit image reuse + 3 digest promotion + 1 条 `真实工作区面板跨设备发现、接续与账号隔离` 超时型 flake）。这轮全量测试与基线都是 CPU 空闲时跑的，flake 两边都命中，再次说明它贴着 bun 默认 5000ms 外层超时、与代码无关。
 - [ ] 部署后浏览器验收：短剧设置里给剧情段选视频分辨率、三步各自选文本模型与写作技能、按角色/道具/场景分选图片模型；改长剧本时文本任务走流式、不再报 524；段提示词超模型上限时自动精简并在弹窗看到全文字数与上限；表演强度与运镜滑杆、节奏五档生效；预演台画幅比例选择与角色缩略图；引用编辑器复制剪切保留「参考图N」；画布写入回执清理任务按小时运行且不影响正在编辑的会话。
+
+## 部署 v1.7.3.3（2026-10-30，LAN 栈）
+
+- 顺序：`build backend web` → 停后端 → 卷内第 **22** 份备份 → 在这份新备份上预演迁移 → `up -d` → 核对 → 推送 `origin/main`。镜像 backend `7c2a067077a6`、web `0210fe6715d6`；备份 `pre-v1733-deploy-20261030T045809Z/open_ai_canvas.db`（**1,281,134,592 B**，停后端后卷里只剩单个 `.db`）。
+- 预演（新备份副本，`-u root`）：`migrate-schema up` 与 `verify` 都退出 0，输出 `{"current":9001,"expected":9001,"ready":true}`。本轮上游没有 Schema 变更，预演是空跑，只证明结构头一致。
+- 线上核对（全部实读）：`/api/health/ready` = `build.version=v1.7.3.3`、`schema current=9001 expected=9001 ready=true`、database/runtime/schema 三项 true；两容器 healthy；`docker logs --since 5m` 的 `level=ERROR|panic|invalid Pi tool` 命中 **0**。账本：72～77 与 9001 的 `applied_at` 逐条保持部署前原值，**9001 仍是 2026-10-12 01:14:32**。
+- 业务行数部署前后逐项相等：`users` 3、`canvas_projects` 4、`tasks` 1247、`resources` 191、`credit_accounts` 3、`billing_orders` 1084、`skills` 94、`model_channels` 15、`channel_models` 60、`provider_egress_objects` 6、`user_groups` 1、`agent_memory_documents` 1、`agent_memory_document_revisions` 14，短剧六表全 0。
+- 唯一差异是 `canvas_mutation_receipts` 4178 → 1163，属上游本轮新增的清理任务（只存提交摘要 + 每小时删 7 天前回执）：在部署前备份上实测 `created_at >= datetime('now','-7 day')` 正好 **1163** 行，被删的 3015 行全部超 7 天，不是误删近期回执。
+- 判据：后端二进制用宿主机 `Buffer.includes` 比对——`v1.7.3.3=true`、`v1.7.3.2=false`，`CANVAS_GITHUB_TOKEN` 与「出站内镜」仍在；`GET /api/admin/settings/provider-egress` 回 **401**（路由已注册）；前端走 **1888**（`/` 200），入口 `assets/index-7_k9HMWj.js`，镜像 release 里的 `admin-shell-kWiD3BpN.js`、`provider-egress-settings-page-C3_722as.js`、`storyboard-rules-DVifmh2S.js` 逐个经 1888 请求均 200，分别命中「内镜」「出站内镜」「表演强度」。
+- 账单：`settled` 960、`refunded` 72、`uncertain` 50、`running` 2，部署前后逐项相等；其中 50 笔 uncertain 在部署前备份上就是 50 笔（比 v1.7.3 部署时的 22 笔多出的是这段时间自然积累），本轮迁移不碰 `billing_orders`。
+- 推送：`origin/main` 推到 `3f07b30a`，`ls-remote origin` 与本地一致；`upstream` 仍停在 `44a0e207`（只读远端，未推）。
+- [ ] 部署后浏览器验收：v1.7.3.3 的短剧项（提示词上限自动精简、表演/运镜滑杆与节奏五档、分步模型与技能、参考图分模型、素材库选图、流式长剧本、预演台画幅与角色缩略图、引用编辑器复制剪切），外加 v1.7.3.2 的侧栏分组与后台新列表、v1.7.3.1 的短剧画幅。
