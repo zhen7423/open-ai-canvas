@@ -4456,3 +4456,13 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - [ ] **后端门禁 1 红，属上游自带回归**：`go build`=0、`go vet`=0、`go test` 33 包 ok（`internal/app` 313.0s），`internal/prompts` 的 `TestLoadAgentPoliciesUsesSingleVersionedContract` 失败——策略正文 12080 字节，测试上限 12000，上游本轮同时改了策略（+3/−1 行）和上限（→12000）但没测住。用纯上游树 `git archive upstream/main` 单独复跑同一条用例**同样失败**，确认不是本分支或合并引入。处理按“先记录不改”：要不要把上限抬到 12288 由他裁决。
 - [ ] 按 AGENTS 纪律，在该红转绿（或明确豁免）之前**不推送** GitHub。
 - [ ] 部署后浏览器验收：电商出品一次多图/多视频、画布 @ 引用悬停预览、图生图跟随参考图比例、素材全量导出/清空与素材包导入、Agent 独立运行时排队与取消、角色卡参数回执。
+
+## 部署 v1.7.3.3 后 18 提交（2026-11-01，LAN 栈）
+
+- 顺序：`build backend web` → 停后端 → 卷内第 **23** 份备份 → 在这份新备份上预演迁移 → `up -d` → 核对 → 推送 `origin/main`。备份 `pre-v1733-post-20261101T131005Z/open_ai_canvas.db`（**1,281,134,592 B**，与上一份同大小，停后端后卷里只剩单个 `.db`）。预演 `migrate-schema up` 与 `verify` 都退出 0，输出 `{"current":9001,"expected":9001,"ready":true}`——本轮上游无 Schema 变更，预演是空跑。
+- **版本串不能当判据**：上游这 18 个提交没有发版，`VERSION` 仍是 v1.7.3.3，`/api/health/ready` 与新旧二进制的 `v1.7.3.3` 都为 true。改用本轮新增字面量区分：停服前先从运行中的容器 `docker cp` 出旧二进制，再从新容器取一份，宿主机 `Buffer.includes` 比对——`AI生成合成内容`、`ProduceID`、`PropagateID` 三个在旧的是 false、新的是 true，`出站内镜` 与 `CANVAS_GITHUB_TOKEN` 两侧都 true（自研增量没丢），二进制 82,803,416 → 82,878,040 字节。
+- 线上核对：`ready=true`、`schema current=9001 expected=9001`、三项检查 true；两容器 healthy；`docker logs --since 5m` 的 `level=ERROR|panic|invalid Pi tool` 命中 **0**；`GET /api/admin/settings/provider-egress` 回 **401**。
+- 账本与行数：72～77 与 9001 的 `applied_at` 与部署前逐条相同（**9001 仍是 2026-10-12 01:14:32**）；`users` 3、`canvas_projects` 4、`tasks` 1343、`resources` 216、`credit_accounts` 3、`billing_orders` 1166、`skills` 94、`model_channels` 15、`channel_models` 60、`provider_egress_objects` 6、`user_groups` 1、`agent_memory_documents` 1、`agent_memory_document_revisions` 17、`canvas_mutation_receipts` 1481，短剧六表 0，部署前后逐项相等（回执清理本轮没有再删，1481 就是 7 天内的那批）。
+- 前端判据：镜像 release 里含新文案「上传商品图，一次生成整套商品图」的是 `image-workbench-page-DrIl8afx.js`，经 **1888** 请求 200 且命中；当前 `admin-shell-CfjkT7_x.js` 经 1888 请求 200 且仍命中「内镜」，自研导航条目没被上游覆盖掉。
+- 遗留：`internal/prompts` 的 `TestLoadAgentPoliciesUsesSingleVersionedContract` 仍是红的（策略正文 12080 > 上限 12000，纯上游树同样失败），属上游自带回归。上游新加的 `AGENTS.md` 要求推送前本地验证全绿，这次按你的授权在带着这一条已知红的情况下部署并推送，运行期不受影响（只是断言，不改行为）。
+- [ ] 部署后浏览器验收：电商出品一次多图/多视频、画布 @ 引用悬停预览、图生图跟随参考图比例、素材全量导出/清空与素材包导入、Agent 独立运行时排队与取消、角色卡参数回执、演示站反馈那批（费用汇总、视频真实尺寸、成片 AIGC 标识、切段时长）。
