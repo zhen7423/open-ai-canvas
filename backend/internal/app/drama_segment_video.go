@@ -120,6 +120,11 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 	if draft.view.DurationMs > int64(request.MaxVideoSeconds)*1000 {
 		return request, nil, errors.New("剧情段超过所选视频模型的时长上限，请调整分镜时长或重新改编")
 	}
+	if profile.video != nil {
+		if err := dramaSegmentDurationError(segment.SegmentIndex, request.Seconds, profile.video.Duration); err != nil {
+			return request, nil, err
+		}
+	}
 	refs := []any{}
 	header := []string{}
 	if previous != nil {
@@ -221,6 +226,15 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 		return request, refs, errors.New(screen.Issue)
 	}
 	return request, refs, nil
+}
+
+// dramaSegmentDurationError 用任务准入同一份时长合同核对取整后的秒数：不被接受时点名段号、秒数与可选范围，
+// 而不是提交后才收到泛化的拒绝。segmentIndex 从 0 开始。
+func dramaSegmentDurationError(segmentIndex int, seconds int, duration VideoDurationConfig) error {
+	if videoDurationAllowed(duration, seconds) {
+		return nil
+	}
+	return fmt.Errorf("第 %d 段需要 %d 秒，所选模型只支持 %s；请调整分镜时长或换用其他视频模型", segmentIndex+1, seconds, videoDurationSupportLabel(duration))
 }
 
 // dramaCastImageState 是没能随请求发送的参考图当前状态，写进段视频的限制说明。

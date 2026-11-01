@@ -650,8 +650,10 @@ export function SettingsPanel({ projectId, summary, cast, onChanged }: { project
     const sampleScene = cast.find((item) => item.kind === "scene" && item.appearance);
     const countOf = (kind: DramaCastKind) => cast.filter((item) => item.kind === kind).length;
     const spent = summary.production.spentMicrocredits;
+    const held = summary.production.heldMicrocredits || 0;
     const budgetMicro = Math.round((budget || 0) * 1_000_000);
-    const usage = budgetMicro > 0 ? Math.min(1, spent / budgetMicro) : 0;
+    // 预算占用与后端判断同一口径：已扣费加冻结中的订单。
+    const usage = budgetMicro > 0 ? Math.min(1, (spent + held) / budgetMicro) : 0;
     return (
         <div className="drama-view">
             <section className="drama-view-main">
@@ -837,10 +839,11 @@ export function SettingsPanel({ projectId, summary, cast, onChanged }: { project
                                 <InputNumber className="!w-full" min={0} precision={0} value={budget} onChange={(value) => setBudget(value || 0)} suffix="积分" aria-label="预算上限" />
                                 <div className="drama-budget-meter">
                                     <div className="drama-budget-track">
-                                        <span className={usage >= 0.9 ? "is-warn" : ""} style={progressFillStyle(budgetMicro ? Math.max(usage * 100, spent ? 2 : 0) : 0)} />
+                                        <span className={usage >= 0.9 ? "is-warn" : ""} style={progressFillStyle(budgetMicro ? Math.max(usage * 100, spent + held ? 2 : 0) : 0)} />
                                     </div>
                                     <span>
                                         已花费 <b>{formatCredits(spent)}</b>
+                                        {held > 0 ? ` · 冻结中 ${formatCredits(held)}` : ""}
                                         {budgetMicro ? ` / ${formatCredits(budgetMicro)}` : " · 不限预算"}
                                     </span>
                                 </div>

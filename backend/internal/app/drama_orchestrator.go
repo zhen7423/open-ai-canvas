@@ -180,9 +180,12 @@ func (r *dramaRun) syncJobs() error {
 				if !errors.As(err, &deferred) {
 					return err
 				}
-				// 任务或账单暂时读不到：本作业保持运行、下一轮再读，不按失败或 0 花费落账。
-				// 不中断本轮，前面已回写的作业花费随本轮进度一起保存。
-				slog.Warn("drama job sync deferred", "project", r.project.ID, "job", job.ID, "error", deferred.err)
+				// 任务或账单暂时读不到、或订单还没结算：本作业保持运行、下一轮再读，不按失败或 0 花费落账。
+				// 不中断本轮，前面已回写的作业花费随本轮进度一起保存。等待结算是正常过程，不记告警。
+				var pending *dramaPendingBilling
+				if !errors.As(deferred.err, &pending) {
+					slog.Warn("drama job sync deferred", "project", r.project.ID, "job", job.ID, "error", deferred.err)
+				}
 			}
 		}
 		if job.Status == model.DramaJobQueued || job.Status == model.DramaJobRunning {
@@ -261,7 +264,9 @@ type dramaJobContinued struct{ taskID string }
 
 func (e *dramaJobContinued) Error() string { return "作业继续运行：" + e.taskID }
 
-// taskCost 是任务实际结算的花费；读账单出错时返回错误，由调用方推迟到下一轮，不按 0 记账（否则预算被少算）。
+// taskCost 是任务实际扣费：已结算记实收（不含差额退回），已退回记 0。
+// 订单还没结算时返回 dramaPendingBilling，由调用方推迟到下一轮；待人工核对（uncertain）或任务结束超过
+// dramaBillingSettleGrace 仍未结算时按冻结额记，避免作业无限等待。读账单出错同样推迟，不按 0 记账。
 func (r *dramaRun) taskCost(task *model.Task) (int64, error) {
 	if task.BillingOrderID == "" {
 		return 0, nil
@@ -273,10 +278,14 @@ func (r *dramaRun) taskCost(task *model.Task) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if order.Status == model.BillingStatusRefunded {
-		return 0, nil
+	charged, held, settled := dramaOrderSpend(*order)
+	if settled {
+		return charged, nil
 	}
-	return order.AmountMicrocredits, nil
+	if order.Status != model.BillingStatusUncertain && time.Since(dramaTaskFinishedAt(task)) < dramaBillingSettleGrace {
+		return 0, &dramaPendingBilling{orderID: order.ID}
+	}
+	return held, nil
 }
 
 // failJob 让失败落到具体镜头或设定上，进入“待处理”而不是卡住整条流水线。
@@ -636,20 +645,23 @@ func (r *dramaRun) dispatch() error {
 	}
 	sort.SliceStable(queued, func(i, j int) bool { return queued[i].Priority > queued[j].Priority })
 	capacity := r.settings.Concurrency - r.running
-	// 画布精修花费计入预算；每轮只查一次，流水线花费在本轮内按结算逐项累加。
-	var canvasSpent int64
-	if r.production.BudgetMicrocredits > 0 && len(queued) > 0 {
-		spent, err := r.s.dramaCanvasSpent(r.production)
+	// 预算按订单口径保守判断：流水线与画布精修的实收加上所有未结算订单的冻结额。每轮只汇总一次，
+	// 本轮新提交任务的冻结额逐项累加；同时把流水线实收回写到 spent_microcredits 缓存。
+	var committed int64
+	budgeted := r.production.BudgetMicrocredits > 0 && len(queued) > 0
+	if budgeted {
+		totals, err := r.s.dramaBillingTotals(r.production)
 		if err != nil {
 			return err
 		}
-		canvasSpent = spent
+		committed = totals.ChargedMicrocredits() + totals.HeldMicrocredits()
+		r.production.SpentMicrocredits = totals.PipelineChargedMicrocredits
 	}
 	for i := range queued {
 		if capacity <= 0 {
 			return nil
 		}
-		if r.production.BudgetMicrocredits > 0 && r.production.SpentMicrocredits+canvasSpent >= r.production.BudgetMicrocredits {
+		if budgeted && committed >= r.production.BudgetMicrocredits {
 			r.production.Status, r.production.PauseReason = model.DramaStatusPaused, dramaBudgetPauseReason
 			return nil
 		}
@@ -689,6 +701,16 @@ func (r *dramaRun) dispatch() error {
 			return err
 		}
 		capacity--
+		if budgeted && task.BillingOrderID != "" {
+			order, err := r.s.repo.BillingOrder(task.BillingOrderID)
+			if err != nil {
+				// 读不到刚提交任务的冻结额时本轮不再派发，下一轮按订单重新汇总。
+				slog.Warn("drama dispatch billing read failed", "project", r.project.ID, "task", task.ID, "error", err)
+				return nil
+			}
+			charged, held, _ := dramaOrderSpend(*order)
+			committed += charged + held
+		}
 	}
 	return nil
 }
@@ -973,7 +995,7 @@ func (r *dramaRun) applyScriptShots(episode *model.DramaEpisode, scripted []prod
 		}
 		total += shots[i].DurationMs
 	}
-	assignDramaSegments(shots, r.settings.Storyboard.SegmentLimits(profile.maxSeconds()))
+	assignDramaSegments(shots, r.settings.Storyboard.SegmentLimits(profile.Durations))
 	if err := r.s.repo.CreateDramaCasts(created); err != nil {
 		return err
 	}
@@ -1428,7 +1450,7 @@ func (r *dramaRun) submitScript(job *model.DramaJob) (*model.Task, bool, error) 
 		return nil, false, err
 	}
 	prompt := production.ScriptPrompt(production.ScriptContext{
-		Segment: r.settings.Storyboard.SegmentLimits(profile.maxSeconds()),
+		Segment: r.settings.Storyboard.SegmentLimits(profile.Durations),
 		Title:   r.project.Name, Settings: r.settings.Settings, VisualRules: r.meta.VisualRules,
 		EpisodeNumber: episode.Number, EpisodeTitle: episode.Title, Synopsis: episode.Synopsis, Hook: episode.Hook, Cliffhanger: episode.Cliffhanger,
 		CastSummary: r.castSummary("character", 30), PropSummary: r.castSummary("prop", 20), SceneSummary: r.castSummary("scene", 20), SourceChapters: chapters,

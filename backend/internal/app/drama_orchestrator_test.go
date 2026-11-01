@@ -382,7 +382,9 @@ func TestDramaTailFailureRetriesPaidOutputWithoutNewGeneration(t *testing.T) {
 func TestDramaBudgetPausesDispatch(t *testing.T) {
 	svc, fake := newDramaTestService(t)
 	project := createTestDrama(t, svc, DramaReviewAuto).Project.ID
-	if err := svc.repo.UpdateDramaProduction(project, map[string]any{"budget_microcredits": 100, "spent_microcredits": 100}); err != nil {
+	// 预算按订单口径判断：冻结中的订单按冻结额计入，不看 spent_microcredits 缓存。
+	seedDramaBillingOrder(t, fake.db, project, "held", model.BillingOrder{AmountMicrocredits: 100, Status: model.BillingStatusReserved})
+	if err := svc.repo.UpdateDramaProduction(project, map[string]any{"budget_microcredits": 100}); err != nil {
 		t.Fatal(err)
 	}
 	runDramaTicks(t, svc, project, 1)

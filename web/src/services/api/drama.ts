@@ -133,10 +133,12 @@ export type DramaProductionView = {
     pauseReason: string;
     settings: DramaSettings;
     budgetMicrocredits: number;
-    /** 作品总花费：流水线任务加关联精修画布上的生成任务，预算按它判断。 */
+    /** 作品已实际扣费：流水线任务加关联精修画布上的生成任务，按计费订单的实收汇总。 */
     spentMicrocredits: number;
-    /** 其中精修画布上的花费。 */
+    /** 其中精修画布上的实收。 */
     canvasSpentMicrocredits: number;
+    /** 尚未结算订单的冻结额（冻结中）；预算按 spent + held 判断。 */
+    heldMicrocredits: number;
     planDone: boolean;
     planCursor: number;
     sampleApproved: boolean;
@@ -396,6 +398,8 @@ export type DramaListItem = {
     aspectRatio: string;
     styleName?: string;
     spentMicrocredits: number;
+    /** 尚未结算订单的冻结额，口径同 DramaProductionView.heldMicrocredits。 */
+    heldMicrocredits: number;
     updatedAt: string;
 };
 

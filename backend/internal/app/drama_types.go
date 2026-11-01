@@ -347,9 +347,12 @@ type DramaProductionView struct {
 	PauseReason        string        `json:"pauseReason"`
 	Settings           DramaSettings `json:"settings"`
 	BudgetMicrocredits int64         `json:"budgetMicrocredits"`
-	// SpentMicrocredits 是作品总花费：流水线任务加关联画布上的精修任务，预算按它判断。
+	// SpentMicrocredits 是作品已实际扣费的总额：流水线任务加关联画布上的精修任务，按订单结算实收计（退回不计）。
+	// CanvasSpentMicrocredits 是其中画布精修的部分；HeldMicrocredits 是尚未结算订单的冻结额（冻结中）。
+	// 预算按 SpentMicrocredits + HeldMicrocredits 保守判断。
 	SpentMicrocredits       int64  `json:"spentMicrocredits"`
 	CanvasSpentMicrocredits int64  `json:"canvasSpentMicrocredits"`
+	HeldMicrocredits        int64  `json:"heldMicrocredits"`
 	PlanDone                bool   `json:"planDone"`
 	PlanCursor              int    `json:"planCursor"`
 	SampleApproved          bool   `json:"sampleApproved"`
@@ -384,6 +387,9 @@ type DramaEpisodeRow struct {
 	FinalResourceID string            `json:"finalResourceId,omitempty"`
 	FinalStale      bool              `json:"finalStale"`
 	Stats           DramaEpisodeStats `json:"stats"`
+	// Revision / UpdatedAt 是集记录的版本与最后更新时间（RFC3339），用于判断读到的状态是否最新。
+	Revision  int64  `json:"revision"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 type DramaInboxItem struct {
@@ -491,8 +497,9 @@ type DramaEpisodeDetail struct {
 // DramaSegmentView 是一个剧情段：视频提示词、参考图、生成方式与视频结果。
 type DramaSegmentView struct {
 	ID string `json:"id"`
-	// Revision 用于画布采用时的乐观并发校验。
+	// Revision 用于画布采用时的乐观并发校验；UpdatedAt 是段记录最后更新时间（RFC3339），段还没有记录时为空。
 	Revision   int64    `json:"revision"`
+	UpdatedAt  string   `json:"updatedAt,omitempty"`
 	Index      int      `json:"index"`
 	Title      string   `json:"title"`
 	ShotIDs    []string `json:"shotIds"`
@@ -610,7 +617,9 @@ type DramaListItem struct {
 	AspectRatio       string   `json:"aspectRatio"`
 	StyleName         string   `json:"styleName,omitempty"`
 	SpentMicrocredits int64    `json:"spentMicrocredits"`
-	UpdatedAt         string   `json:"updatedAt"`
+	// HeldMicrocredits 是尚未结算订单的冻结额，口径同 DramaProductionView。
+	HeldMicrocredits int64  `json:"heldMicrocredits"`
+	UpdatedAt        string `json:"updatedAt"`
 }
 
 type DramaModelOption struct {

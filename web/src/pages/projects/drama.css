@@ -390,6 +390,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* 积分区间较长，允许在区间符处换行，完整区间见卡片 title。 */
+.drama-compose-estimate b.is-wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+}
 .drama-compose-estimate span {
     font-size: var(--fs-micro);
     color: var(--drama-muted);
@@ -825,6 +831,29 @@
         display: none;
     }
 }
+/* 窄屏顶栏折行：标题与操作一行，视图导航独占一行并可横向滚动；操作按钮只留图标。 */
+@media (max-width: 720px) {
+    .drama-studio {
+        grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+    .drama-topbar {
+        flex-wrap: wrap;
+        row-gap: 8px;
+        padding: 8px 8px 8px 4px;
+    }
+    .drama-topbar-title {
+        flex: 1 1 0;
+    }
+    .drama-topbar-actions {
+        gap: 4px;
+    }
+    .drama-topbar-actions .ant-btn {
+        padding-inline: 8px;
+    }
+    .drama-topbar-action-label {
+        display: none;
+    }
+}
 
 .drama-body {
     display: grid;
@@ -845,12 +874,28 @@
         grid-template-columns: 232px minmax(0, 1fr);
     }
 }
+/* 集列表与制作区的分段切换只在窄屏出现；宽屏两栏并排。 */
+.drama-mobile-tabs {
+    display: none;
+}
 @media (max-width: 720px) {
     .drama-body,
     .drama-body.is-inspector-hidden {
         grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr);
     }
-    .drama-rail {
+    .drama-mobile-tabs {
+        display: block;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--drama-line);
+    }
+    .drama-body[data-mobile-pane="production"] .drama-rail {
+        display: none;
+    }
+    .drama-body[data-mobile-pane="episodes"] .drama-rail {
+        border-right: 0;
+    }
+    .drama-body[data-mobile-pane="episodes"] .drama-main {
         display: none;
     }
 }
@@ -1484,6 +1529,22 @@
     }
     .drama-nav-item svg {
         display: none;
+    }
+}
+@media (max-width: 720px) {
+    .drama-nav {
+        order: 1;
+        flex: 1 1 100%;
+        min-width: 0;
+        margin-left: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .drama-nav::-webkit-scrollbar {
+        display: none;
+    }
+    .drama-nav-item {
+        flex: none;
     }
 }
 
@@ -2963,6 +3024,28 @@
 .drama-queue-toggle[aria-expanded="true"] {
     background: var(--surface-hover);
     color: var(--foreground);
+}
+/* 窄屏统计横向滚动，不截断；展开按钮贴右侧常驻。 */
+@media (max-width: 720px) {
+    .drama-queue-bar {
+        gap: 12px;
+        padding-left: 12px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .drama-queue-bar::-webkit-scrollbar {
+        display: none;
+    }
+    .drama-queue-budget {
+        flex: none;
+        overflow: visible;
+    }
+    .drama-queue-toggle {
+        position: sticky;
+        right: 0;
+        background: var(--drama-sunken);
+        box-shadow: -8px 0 8px -4px var(--drama-sunken);
+    }
 }
 .drama-queue-panel {
     border-top: 1px solid var(--drama-line);

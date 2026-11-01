@@ -40,7 +40,7 @@ import { createPrevisTransaction, installPrevisTerminalListeners } from "@/lib/c
 import { emptyPrevisPlacementIntent, finitePrevisGroundPoint, type PrevisGroundPoint, type PrevisPlacementIntent } from "@/lib/canvas/previs/previs-placement";
 import { previsDiagnosticObjectKind } from "@/lib/canvas/previs/previs-diagnostics";
 import { recordPrevisDiagnostic } from "@/lib/canvas/previs/previs-diagnostics-recorder";
-import { PREVIS_MIN_ORBIT_DISTANCE, resolvePrevisFrameBounds, resolvePrevisZoomMinDistance } from "@/lib/canvas/previs/previs-frame-bounds";
+import { PREVIS_INITIAL_FRAME_PADDING, PREVIS_MIN_ORBIT_DISTANCE, resolvePrevisFrameBounds, resolvePrevisInitialFrame, resolvePrevisZoomMinDistance } from "@/lib/canvas/previs/previs-frame-bounds";
 import {
     previsCaptureInitial,
     previsCaptureUsable,
@@ -713,7 +713,7 @@ function PrevisSceneContent({
             orbitRef.current?.update();
             invalidate();
         };
-        const frame = (ids?: Set<string>, fixedDirection = false) => {
+        const frame = (ids?: Set<string>, fixedDirection = false, padding = PREVIS_INITIAL_FRAME_PADDING) => {
             const aspect = size.width / Math.max(size.height, 1);
             const bounds = resolvePrevisFrameBounds(scene.objects, ids, aspect, freeCamera.fov);
             if (!bounds) return resetCamera();
@@ -723,7 +723,7 @@ function PrevisSceneContent({
             if (direction.lengthSq() < 0.01) direction.set(...PREVIS_DEFAULT_VIEW_DIRECTION);
             direction.normalize();
             orbitRef.current?.target.copy(bounds.target);
-            freeCamera.position.copy(bounds.target).add(direction.multiplyScalar(Math.max(1.8, bounds.fitDistance * 1.18)));
+            freeCamera.position.copy(bounds.target).add(direction.multiplyScalar(Math.max(1.8, bounds.fitDistance * padding)));
             freeCamera.lookAt(bounds.target);
             orbitRef.current?.update();
             invalidate();
@@ -747,11 +747,11 @@ function PrevisSceneContent({
         };
         onNavigationReady?.(navigation);
         // 首次取景：等容器有真实尺寸再做；优先对准演员（道具可能是 8m 山体或地面板，会把人挤成小点），
-        // 用固定的 3/4 略俯视角，地平线落在画面上部三分之一附近。
+        // 没有演员时不算背景板与地面。用固定的 3/4 略俯视角，地平线落在画面上部三分之一附近。
         if (initialFrameSceneRef.current !== scene.id && size.width > 0 && size.height > 0) {
             initialFrameSceneRef.current = scene.id;
-            const actorIds = new Set(scene.objects.filter((item) => item.visible && (item.kind === "actor" || item.primitive === "character")).map((item) => item.id));
-            frame(actorIds.size ? actorIds : undefined, true);
+            const initial = resolvePrevisInitialFrame(scene.objects);
+            frame(initial.ids, true, initial.padding);
         }
         return () => onNavigationReady?.({ focusSelected: () => undefined, frameScene: () => undefined, resetCamera: () => undefined, zoom: () => undefined });
     }, [freeCamera, invalidate, onNavigationReady, scene.id, scene.objects, selectedObjectId, size.height, size.width]);

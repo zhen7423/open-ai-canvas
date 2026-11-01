@@ -625,8 +625,8 @@ export default function DramaCreatePage() {
                                 <b>{estimate ? formatCount(estimate.shots) : "—"}</b>
                                 <span>镜头</span>
                             </div>
-                            <div>
-                                <b>{estimate?.priced ? `${formatCredits(estimate.minMicrocredits)}–${formatCredits(estimate.maxMicrocredits)}` : "—"}</b>
+                            <div title={estimate?.priced ? `预计积分 ${formatCredits(estimate.minMicrocredits)}–${formatCredits(estimate.maxMicrocredits)}` : undefined}>
+                                <b className="is-wrap">{estimate?.priced ? `${formatCredits(estimate.minMicrocredits)}–${formatCredits(estimate.maxMicrocredits)}` : "—"}</b>
                                 <span>预计积分</span>
                             </div>
                         </div>

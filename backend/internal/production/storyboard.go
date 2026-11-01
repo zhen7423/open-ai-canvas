@@ -64,9 +64,10 @@ type StoryboardSettings struct {
 	CameraMotion int `json:"cameraMotion"`
 }
 
-// SegmentLimits 是切分一集剧情段时实际执行的约束（毫秒），已按视频模型单次上限收紧。
+// SegmentLimits 是切分一集剧情段时实际执行的约束（毫秒），已按视频模型单次可生成的时长范围收紧。
 type SegmentLimits struct {
-	Mode  string
+	Mode string
+	// MinMs 不低于视频模型单次最短时长；智能模式下只有这一项下限。
 	MinMs int64
 	// MaxMs 为 0 只出现在智能模式且模型未声明单次上限时，表示不限时长。
 	MaxMs int64
@@ -138,14 +139,17 @@ func normalizedDirectionLevel(level, fallback int) int {
 	return clampInt(level, MinDirectionLevel, MaxDirectionLevel)
 }
 
-// SegmentLimits 把剧情段规则与视频模型单次上限合成实际约束：任何模式都不会超过模型上限。
-func (s StoryboardSettings) SegmentLimits(modelMaxSeconds int) SegmentLimits {
+// SegmentLimits 把剧情段规则与视频模型单次可生成的时长合成实际约束：任何模式都不超过模型上限，
+// 下限取设置下限与模型下限中较大的一个（智能模式没有设置下限，只用模型下限）。
+// 设置的上限低于模型下限时把上限抬到模型下限：更短的段生成时也会补到模型下限。
+func (s StoryboardSettings) SegmentLimits(model DurationOptions) SegmentLimits {
 	s = s.Normalized()
+	modelMin, modelMax := model.Bounds()
 	capped := func(seconds int) int64 {
-		if modelMaxSeconds > 0 && seconds > modelMaxSeconds {
-			seconds = modelMaxSeconds
+		if modelMax > 0 && seconds > modelMax {
+			seconds = modelMax
 		}
-		return int64(seconds) * 1000
+		return int64(max(seconds, modelMin)) * 1000
 	}
 	switch s.SegmentMode {
 	case SegmentFixed:
@@ -155,7 +159,11 @@ func (s StoryboardSettings) SegmentLimits(modelMaxSeconds int) SegmentLimits {
 		high := capped(s.SegmentMaxSeconds)
 		return SegmentLimits{Mode: SegmentRange, MinMs: min(capped(s.SegmentMinSeconds), high), MaxMs: high}
 	}
-	return SegmentLimits{Mode: SegmentAuto, MaxMs: int64(max(modelMaxSeconds, 0)) * 1000}
+	limits := SegmentLimits{Mode: SegmentAuto, MinMs: int64(modelMin) * 1000, MaxMs: int64(modelMax) * 1000}
+	if limits.MaxMs > 0 {
+		limits.MinMs = min(limits.MinMs, limits.MaxMs)
+	}
+	return limits
 }
 
 // pacingRule 是一档镜头节奏的单镜时长上下限、估算用平均镜头长度与写进剧本提示词的说明。
@@ -327,7 +335,7 @@ func CameraMotionRule(level int) string {
 	return fmt.Sprintf("运镜动感 %d/10（1 几乎静止，5 有动机的运镜，10 强烈冲击）。%s", level, cameraBands[directionBand(level)])
 }
 
-// PromptRules 把分镜规则写成剧本提示词里的硬约束。segment 是已按视频模型上限收紧的剧情段约束。
+// PromptRules 把分镜规则写成剧本提示词里的硬约束。segment 是已按视频模型时长范围收紧的剧情段约束。
 func (s StoryboardSettings) PromptRules(episodeSeconds int, segment SegmentLimits) string {
 	s = s.Normalized()
 	var b strings.Builder
@@ -338,6 +346,8 @@ func (s StoryboardSettings) PromptRules(episodeSeconds int, segment SegmentLimit
 		fmt.Fprintf(&b, "剧情段：成片每 %d 秒一个剧情段（%s），所以每 %d 秒内应有 3–6 个镜头和完整的小冲突，不要用一个长镜头撑满一段。\n", segment.MaxMs/1000, unit, segment.MaxMs/1000)
 	case segment.Mode == SegmentRange:
 		fmt.Fprintf(&b, "剧情段：每个剧情段 %d–%d 秒（%s），在场景切换或冲突转折处收住；每段应有 3–6 个镜头和完整的小冲突，同一场景连续超过 %d 秒要在情绪转折处留出可断开的位置。\n", segment.MinMs/1000, segment.MaxMs/1000, unit, segment.MaxMs/1000)
+	case segment.MaxMs > 0 && segment.MinMs > 0:
+		fmt.Fprintf(&b, "剧情段：按剧情节拍切段（%s），在场景切换或冲突转折处断开，单段 %d–%d 秒（视频模型单次最短 %d 秒，过短的场景与相邻场景并成一段）；每段应有 3–6 个镜头和完整的小冲突，不要用一个长镜头撑满一段。\n", unit, segment.MinMs/1000, segment.MaxMs/1000, segment.MinMs/1000)
 	case segment.MaxMs > 0:
 		fmt.Fprintf(&b, "剧情段：按剧情节拍切段（%s），在场景切换或冲突转折处断开，单段不超过 %d 秒；每段应有 3–6 个镜头和完整的小冲突，不要用一个长镜头撑满一段。\n", unit, segment.MaxMs/1000)
 	}
