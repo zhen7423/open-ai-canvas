@@ -10,9 +10,10 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - 合并范围：上游 12 提交（v1.7.3.4），含短剧选章导入与角色声音/多造型、画布 Agent 队列与插话、提示词字号与滚轮归属、电商出品改版与批量生成、故事板/调度故事板预设。
 - 冲突面：唯一冲突 `backend/internal/database/migrations.go`；上游 v78 `drama_cast_voice_looks` 照收，本分支 `provider_egress_objects` 9001 仍排列表末项，`CurrentSchemaVersion` 仍取 9001。其余 5 个双方改动文件自动合并（CHANGELOG、backend-database.mdx、code-map.mdx、features.mdx、pending-test.mdx），内镜描述与管理后台入口保留。
 - 已验证（本机容器）：后端 `go build ./...`、`go vet ./internal/...` 退出码 0；`go test ./internal/...` 33 个包通过，`internal/prompts` 唯一失败是 CRLF 检出令策略文本 12080 字节超过 12000 上限（LF 副本实测通过），非本轮引入。前端 `tsc --noEmit` 退出码 0；`bun test test/` 2880 pass / 14 fail，与合并前基线 2854 pass / 14 fail 的失败名单差集双向为空；14 条是容器缺 git/prettier 的既有环境红。
-- [ ] 部署后核对 `/api/health/ready`：`build.version=v1.7.3.4`、`schema.current == expected == 9001`；`schema_migrations` 新增 78 的应用时间，9001 的 `applied_at` 保持 2026-10-12 01:14:32。
-- [ ] 在停库后的新备份上预演 `migrate-schema up` / `verify`，并核对短剧六表与 `canvas_projects`/`tasks`/`resources` 行数不变（v78 为已有表增列）。
-- [ ] 部署后抽查主链路：短剧选章导入与角色声音/造型、画布 Agent 排队与插话、提示词字号偏好、电商出品批量生成；管理后台「出站内镜」入口仍在，`GET /api/admin/settings/provider-egress` 返回 401。
+- 部署（2026-11-02 23:07 本地 / 15:07 UTC）：LAN 栈 `open-ai-canvas-lan` 重建 backend/web 后上线，两容器 `Up (healthy)`；停后端后卷内备份 `pre-v1734-20261102T150553Z`（第 24 份备份）。
+- [x] 部署后核对 `/api/health/ready`：`build.version=v1.7.3.4`、`schema.current == expected == 9001`、`ready=true`；`schema_migrations` 的 78 `applied_at=2026-11-02 15:07:42.147190634Z`，9001 的 `applied_at` 保持 `2026-10-12 01:14:32.864590311Z`。
+- [x] 在停库后的新备份上预演 `migrate-schema up` / `verify`：两次均返回 `{"current":9001,"expected":9001,"ready":true}`；上线后快照与部署前逐表行数一致（`tasks` 1572、`resources` 252、`billing_orders` 1363、`credit_ledger_entries` 2681、`provider_egress_objects` 6，短剧六表均为 0），任务状态计数也不变。
+- [x] 部署后抽查：后端二进制含 `v1.7.3.4` 且不含 `v1.7.3.3`；启动 5 分钟日志 `level=ERROR|panic|invalid Pi tool` 计数为 0；`GET /api/admin/settings/provider-egress` 返回 401；1888 实际下发的 `canvas-cloud-agent-panel-e1vtwMdl.js` 命中新增文案「回到底部」。真实业务出图回归留待日常使用。
 
 ## 宫格分镜：故事板与调度故事板
 
