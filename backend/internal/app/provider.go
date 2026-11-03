@@ -303,6 +303,13 @@ func providerMediaRequirementFor(ctx context.Context, input canvasGenerationInpu
 		policy.preferURL = true
 		reason = "内置视频协议要求参考素材可被上游取回"
 	}
+	// Seedance Videos（含自建 /videos 兼容渠道）只收公网可取的素材地址；
+	// 本地参考图必须交给出站内镜换成公网 URL，不能继续走 data URL 内联。
+	if !policy.requireURL && (isSeedanceVideoConfig(input.Config) || strings.Contains(strings.ToLower(strings.TrimSpace(input.Config.InterfaceType)), "seedance")) {
+		policy.requireURL = true
+		policy.preferURL = true
+		reason = "Seedance 视频协议要求参考素材以公网地址交付"
+	}
 	if adapter, ok := protocolAdapterForContext(ctx, input.Config.InterfaceType); ok && adapter.Metadata().RequiresPublicMediaURLs {
 		policy.requireURL = true
 		policy.preferURL = true
