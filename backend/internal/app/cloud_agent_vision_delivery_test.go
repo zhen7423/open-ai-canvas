@@ -373,14 +373,25 @@ func TestCloudAgentVisionRejectsInvalidResources(t *testing.T) {
 	for _, tc := range []struct {
 		name, field string
 		value       any
+		// modelLimit 非 0 时先把渠道模型的单图上限改成它再构造输入：
+		// 单图上限远大于可压缩硬顶的模型，超出硬顶的图仍要在归口预检被拒绝。
+		modelLimit int64
 	}{
-		{"foreign", "user_id", "other"},
-		{"not-ready", "status", "uploading"},
-		{"not-image", "mime_type", "text/plain"},
-		{"too-large", "size", int64(2 * 1024 * 1024)},
+		{name: "foreign", field: "user_id", value: "other"},
+		{name: "not-ready", field: "status", value: "uploading"},
+		{name: "not-image", field: "mime_type", value: "text/plain"},
+		{name: "beyond-compression", field: "size", value: textModelImageCompressionMaxInput + 1, modelLimit: 30 << 20},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, db, _ := cloudAgentVisionFixture(t)
+			if tc.modelLimit > 0 {
+				capability := DefaultModelCapabilityConfigForModel(string(model.ChannelInterfaceChatCompletion), "text-test")
+				capability.Text.References.MaxImages = 2
+				capability.Text.References.MaxImageBytes = tc.modelLimit
+				if err := db.Model(&model.ChannelModel{}).Where("id = ?", "cm").Update("capability_config_json", mustEncodeModelCapabilityConfig(t, capability)).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			input := cloudAgentVisionInput(t, s, "cat")
 			if err := db.Model(&model.Resource{}).Where("id = ?", "ref-one").Update(tc.field, tc.value).Error; err != nil {
 				t.Fatal(err)
@@ -653,15 +664,20 @@ func TestCloudAgentVisionBudgetSoftNudgesBeforeAnotherModelStep(t *testing.T) {
 	}
 }
 
-func TestCloudAgentVisionRejectsOversizedActualBytes(t *testing.T) {
+// 元数据说 1 字节、实际像素更大，且模型上限小到压缩也到不了：不能把这张图当"已附图"发出去，
+// 但也不能因此让整个模型步骤失败（图已在历史里，失败等于这一步什么都看不到）。
+func TestCloudAgentVisionDoesNotTrustOversizedActualBytes(t *testing.T) {
 	s, db, pixels := cloudAgentVisionFixture(t)
 	input := cloudAgentVisionInput(t, s, "cat")
 	input.Config.CapabilityConfig.Text.References.MaxImageBytes = int64(len(pixels) - 1)
 	if err := db.Model(&model.Resource{}).Where("id = ?", "ref-one").Update("size", 1).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := s.hydrateGenerationMedia("user", &input, providerMediaHydrationPolicy{}); err == nil {
-		t.Fatal("worker trusted metadata instead of bounding actual bytes")
+	if err := s.hydrateGenerationMedia("user", &input, providerMediaHydrationPolicy{}); err != nil {
+		t.Fatalf("an unreachable image must not fail the whole model step: %v", err)
+	}
+	if strings.TrimSpace(input.ReferenceImages[0].DataURL) != "" || input.ReferenceImages[0].Bytes != 0 {
+		t.Fatalf("worker sent pixels it was told exceed the model limit: bytes=%d", input.ReferenceImages[0].Bytes)
 	}
 }
 

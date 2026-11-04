@@ -121,6 +121,9 @@ type providerMedia struct {
 	Width      int    `json:"width"`
 	Height     int    `json:"height"`
 	DurationMs int64  `json:"durationMs"`
+	// Omitted 只在 worker 读取阶段使用：这张图压缩后仍超过模型的单张图片上限，本次不附图。
+	// 不落任务输入（json:"-"），重试时会按当时的模型配置重新判定。
+	Omitted bool `json:"-"`
 }
 
 type imageResponse struct {
@@ -260,6 +263,9 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 		return runImageTask(ctx, input)
 	case "text":
 		if input.AgentRequests != nil {
+			// 压缩后仍超模型单图上限的图在这里被摘掉（参考清单 + 正文一起改），
+			// 不能让占位解析把它们当成"尚未读取成功"。
+			cloudAgentDropOmittedImages(&input)
 			input, err = resolveAgentResourcePlaceholders(input, true)
 			if err != nil {
 				return nil, err

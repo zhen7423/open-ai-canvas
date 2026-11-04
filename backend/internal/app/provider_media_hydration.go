@@ -1,6 +1,7 @@
 // 生成输入媒体的准备：把画布上的资源引用转换成供应商可读取的形式（签名 URL 或 data URL）。
 //
 // 供应商能读取公网地址时优先给签名 URL；不能时才内联为 data URL，避免请求体过大。
+// 看图（imageOnly）必然内联，超过模型的单张图片上限时先压缩，见 text_model_image_compression.go。
 
 package app
 
@@ -14,6 +15,11 @@ import (
 
 	"yingce/backend/internal/model"
 )
+
+// cloudAgentVisionStep 判断这次文本任务是不是 Agent 看图（而不是识图规划等其它内联图任务）。
+func cloudAgentVisionStep(input canvasGenerationInput) bool {
+	return input.Mode == "text" && input.AgentRequests != nil && input.AgentRequests.Canonical != nil
+}
 
 func (s *Service) hydrateGenerationMedia(userID string, input *canvasGenerationInput, policy providerMediaHydrationPolicy) error {
 	groups := [][]providerMedia{input.ReferenceImages, input.ReferenceVideos, input.ReferenceAudios}
@@ -34,7 +40,14 @@ func (s *Service) hydrateGenerationMedia(userID string, input *canvasGenerationI
 		}
 		for index := range group {
 			if err := s.hydrateProviderMedia(userID, &group[index], mediaPolicy); err != nil {
-				return err
+				if !mediaPolicy.imageOnly || !errors.Is(err, errTextModelImageOmitted) {
+					return err
+				}
+				// 只有 Agent 看图的模型步骤允许软失败：回执已进历史，缺这张图也能按文字说明继续。
+				// 其它文本任务（识图规划等）把它当硬错误，照旧返回给调用方。
+				if !cloudAgentVisionStep(*input) {
+					return err
+				}
 			}
 		}
 	}
@@ -62,7 +75,13 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 	if policy.imageOnly && !strings.HasPrefix(strings.ToLower(resource.MimeType), "image/") {
 		return errors.New("看图资源不是图片")
 	}
-	if policy.maxBytes > 0 && resource.Size > policy.maxBytes {
+	if policy.imageOnly {
+		// 模型声明的单张图片上限不再是准入理由：超限图会在下面被压回上限以内；
+		// 只有"上限本身就把硬顶当目标"的模型才在读取前拒绝（见 textModelImageRejectable）。
+		if textModelImageRejectable(policy.maxBytes) && resource.Size > textModelImageCompressionMaxInput {
+			return errors.New(textModelImageOversizedMessage())
+		}
+	} else if policy.maxBytes > 0 && resource.Size > policy.maxBytes {
 		return errors.New("参考图片文件超过当前模型大小限制")
 	}
 	useObjectURL := policy.requireURL || (policy.preferURL && resourceUsesObjectStorage(resource))
@@ -84,6 +103,13 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 	if !policy.imageOnly && strings.HasPrefix(strings.TrimSpace(media.DataURL), "data:") {
 		return nil
 	}
+	// 同一张图会在 Agent 的每个模型步被重新组装：命中缓存就不必再读盘、再解码、再编码。
+	if policy.imageOnly && policy.maxBytes > 0 && resource.Size > policy.maxBytes {
+		if cached, ok := s.cachedTextModelImage(resource, policy.maxBytes); ok {
+			applyTextModelImage(media, cached)
+			return nil
+		}
+	}
 	resource, body, err := s.OpenResource(userID, resourceID)
 	if err != nil {
 		return fmt.Errorf("读取任务参考资源失败：%w", err)
@@ -94,8 +120,13 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 		return err
 	}
 	resourceLimit := megabytes(runtimePolicy.Resource.ResourceUploadMB)
-	if policy.maxBytes > 0 {
+	if !policy.imageOnly && policy.maxBytes > 0 {
 		resourceLimit = min(resourceLimit, policy.maxBytes)
+	}
+	if policy.imageOnly {
+		// 看图的模型上限在压缩之后才核：读取口径只受解码内存硬顶约束，
+		// 否则超过模型上限的原图会在读完之前就被截断，压缩根本没机会执行。
+		resourceLimit = min(resourceLimit, textModelImageCompressionMaxInput)
 	}
 	data, err := io.ReadAll(io.LimitReader(body, resourceLimit+1))
 	if err != nil {
@@ -108,14 +139,35 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 		return errors.New("看图资源内容为空")
 	}
 	mimeType := normalizedMediaMimeType(firstNonEmpty(media.MimeType, resource.MimeType), data)
+	width, height := resource.Width, resource.Height
+	if policy.imageOnly {
+		// 按渠道模型声明的单张图片上限决定：没超就不压缩，超了才压回上限以内。
+		compressed := compressImageForTextModel(data, mimeType, policy.maxBytes)
+		if compressed.Compressed {
+			data, mimeType = compressed.Data, compressed.MIME
+			width, height = compressed.Width, compressed.Height
+			s.storeTextModelImage(resource, policy.maxBytes, compressed)
+		}
+		// 压缩够不到模型上限（认不出的编码、或上限小到无法达到）时不能把整步请求打掉：
+		// 图片已经在对话历史里，失败只会让模型这一步什么都看不到。标记为"未附图"，
+		// 让模型按文字如实说明读不了，而不是凭节点标题猜画面。
+		if policy.maxBytes > 0 && int64(len(data)) > policy.maxBytes {
+			media.DataURL, media.URL = "", ""
+			media.Bytes = 0
+			media.MimeType = ""
+			media.DurationMs = 0
+			media.Omitted = true
+			return errTextModelImageOmitted
+		}
+	}
 	media.DataURL = dataURL(mimeType, data)
 	if policy.imageOnly {
 		media.URL = ""
 	}
 	media.MimeType = mimeType
 	media.Bytes = int64(len(data))
-	media.Width = resource.Width
-	media.Height = resource.Height
+	media.Width = width
+	media.Height = height
 	media.DurationMs = resource.DurationMs
 	return nil
 }

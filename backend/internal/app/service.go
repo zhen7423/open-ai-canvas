@@ -112,6 +112,9 @@ type Service struct {
 	// dramaTaskHook 只在测试中替换短剧调度的任务提交，生产路径始终走 CreateTask 准入。
 	dramaTailFrameHook func(userID, resourceID string) (string, error)
 	dramaTaskHook      func(userID string, req CreateTaskRequest, timeline *renderProject) (*model.Task, error)
+	// textModelImageCache 缓存按模型上限压好的图片发送副本：Agent 每步都会重新组装同一批参考图，
+	// 没有缓存就等于每步重新解码+编码一遍。
+	textModelImageCache textModelImageCache
 }
 
 const taskWorkerConcurrency = 3
