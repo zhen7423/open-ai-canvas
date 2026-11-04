@@ -58,6 +58,10 @@ const (
 // 看图是"软失败"：不附这张图、不让整个模型步骤失败，模型按文字回执如实说明读不了。
 var errTextModelImageOmitted = errors.New("图片压缩后仍超过模型的单张图片上限")
 
+// errTextModelImageLimitNeedsPixels 拦住"看图 + 对象存储 URL 交付"的组合策略：
+// 签名 URL 会让上游自己取回原始字节，压缩与缓存全部失效，模型声明的单图上限形同虚设。
+var errTextModelImageLimitNeedsPixels = errors.New("看图需要内联真实像素，不能按对象存储地址交付")
+
 // textModelImageOversizedMessage 是"连压缩都做不了"时的拒绝文案：模型声明的单张图片上限
 // 不再是拒绝理由（发送前会按它压缩），只有超出可读入内存的单张硬顶才算不可用。
 func textModelImageOversizedMessage() string {

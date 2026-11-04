@@ -84,6 +84,13 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 	} else if policy.maxBytes > 0 && resource.Size > policy.maxBytes {
 		return errors.New("参考图片文件超过当前模型大小限制")
 	}
+	// 看图必然内联真实像素，不走签名 URL：URL 交付会让上游自己取回原始字节，
+	// 压缩与缓存全部失效，模型声明的单图上限也随之形同虚设。
+	// 正常调用方（hydrateGenerationMedia）已经用 imageOnly 覆盖了 preferURL，
+	// 这条守卫是给直接传组合策略的调用方兜底，并把"必须读字节"变成显式契约。
+	if policy.imageOnly && policy.preferURL && resourceUsesObjectStorage(resource) {
+		return errTextModelImageLimitNeedsPixels
+	}
 	useObjectURL := policy.requireURL || (policy.preferURL && resourceUsesObjectStorage(resource))
 	if useObjectURL {
 		signedURL, err := s.providerResourceURL(resource, time.Time{})

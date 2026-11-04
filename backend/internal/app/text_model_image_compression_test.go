@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -273,6 +274,33 @@ func TestHydrateProviderMediaReusesCompressedCopy(t *testing.T) {
 		t.Fatal("a different model limit reused the wrong compressed copy")
 	}
 }
+
+// 看图的图片必然内联真实像素：签名 URL 交付会让上游取回原始字节，压缩与缓存全部失效。
+// hydrateGenerationMedia 会用 imageOnly 覆盖 preferURL，这条守卫是给直接传组合策略的调用方兜底。
+func TestHydrateProviderMediaRejectsImageOnlyWithPreferredObjectURL(t *testing.T) {
+	s, db := textModelTestService(t)
+	original := textModelTestNoisyPNG(t, 1400, 1000, false)
+	if err := db.Create(&model.Resource{ID: "ref-oss", UserID: "user", Kind: "image", Status: model.ResourceStatusReady, Provider: "aliyun", Bucket: "private-bucket", ObjectKey: "users/user/image/ref-oss.png", MimeType: "image/png", Size: int64(len(original)), Width: 1400, Height: 1000}).Error; err != nil {
+		t.Fatal(err)
+	}
+	media := providerMedia{StorageKey: "resource:ref-oss", MimeType: "image/png"}
+	err := s.hydrateProviderMedia("user", &media, providerMediaHydrationPolicy{imageOnly: true, preferURL: true, maxBytes: 30 << 20})
+	if !errors.Is(err, errTextModelImageLimitNeedsPixels) {
+		t.Fatalf("imageOnly must not hand the upstream a signed object URL: %v", err)
+	}
+	if media.URL != "" {
+		t.Fatal("the guarded path must not fill in a signed URL")
+	}
+	// 去掉 imageOnly（普通生成任务）时仍按原协议优先公网地址，不受这条守卫影响。
+	plain := providerMedia{StorageKey: "resource:ref-oss", MimeType: "image/png"}
+	if err := s.hydrateProviderMedia("user", &plain, providerMediaHydrationPolicy{preferURL: true}); err != nil {
+		t.Skipf("本用例夹具未配置对象存储密钥，公网地址分支无法在此验证：%v", err)
+	}
+	if plain.URL == "" || plain.DataURL != "" {
+		t.Fatalf("non-vision hydration lost its preferred object URL: %#v", plain)
+	}
+}
+
 func TestHydrateGenerationMediaUnlimitedModelKeepsLargeImage(t *testing.T) {
 	s, db := textModelTestService(t)
 	original := textModelTestNoisyPNG(t, 900, 700, false)
