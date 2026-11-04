@@ -1,4 +1,5 @@
 import { Popover } from "antd";
+import { ShoppingBag } from "lucide-react";
 import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, PanelLeftClose, PanelLeftOpen, Plus, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
@@ -47,6 +48,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
             items: [
                 { ...toolItem("create", "/"), id: "home", title: "创作" },
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects"), title: "短剧制作" }] : []),
+                ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: "电商 Agent", icon: ShoppingBag, to: "/ecommerce" }] : []),
                 { ...toolItem("canvas", "/canvas"), title: "自由画布" },
             ],
         },
@@ -61,10 +63,7 @@ function buildNav(features: FeatureAvailability): { groups: WorkspaceNavGroup[];
         },
         {
             heading: "资产与历史",
-            items: [
-                { ...toolItem("assets", "/assets"), title: "资产" },
-                ...(features.taskCenterEnabled ? [{ id: "tasks", title: "创作历史", icon: ImageIcon, to: "/tasks" }] : []),
-            ],
+            items: [{ ...toolItem("assets", "/assets"), title: "资产" }, ...(features.taskCenterEnabled ? [{ id: "tasks", title: "创作历史", icon: ImageIcon, to: "/tasks" }] : [])],
         },
     ];
 
@@ -106,7 +105,9 @@ function WorkspaceSidebarProfile({ collapsed, user, onExpand, onCollapse }: { co
             <div className={cn("app-workspace-sidebar-profile-row", collapsed && "is-collapsed")}>
                 <Popover open={menuOpen} onOpenChange={setMenuOpen} trigger="click" placement="topLeft" arrow={false} rootClassName="workspace-account-popover" content={content}>
                     <button type="button" className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label="打开账户菜单" title={profileName}>
-                        <UserGroupAvatarRing><UserAvatar user={user} className="app-workspace-sidebar-profile-avatar" /></UserGroupAvatarRing>
+                        <UserGroupAvatarRing>
+                            <UserAvatar user={user} className="app-workspace-sidebar-profile-avatar" />
+                        </UserGroupAvatarRing>
                         {!collapsed ? (
                             <span className="app-workspace-sidebar-profile-copy">
                                 <strong>{profileName}</strong>

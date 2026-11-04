@@ -292,8 +292,9 @@ var schemaMigrations = []migration{
 	{version: 76, name: "agent_memory_document_skill_discovery", checksum: "sha256:agent-memory-document-skill-discovery-v76-20261028", apply: migrateAgentMemoryDocumentSkillDiscovery},
 	{version: 77, name: "agent_memory_document_columns", checksum: "sha256:agent-memory-document-columns-v77-20261028", apply: migrateAgentMemoryDocumentColumns},
 	{version: 78, name: "drama_cast_voice_looks", checksum: "sha256:drama-cast-voice-looks-v78-20261101", apply: migrateDramaCastVoiceLooks},
+	{version: 79, name: "ecommerce_agent_and_knowledge", checksum: "sha256:ecommerce-agent-and-knowledge-v79-20261101", apply: migrateEcommerceFeature},
 	// 本仓库分支的出站内镜台账：先后登记在 51、55、57、58，每一次都因为上游占用同号而让位
-	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 78），
+	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 79），
 	// 因此固定落在保留段末项 9001，不再随上游发版改号。旧账本由
 	// normalizeLegacyProviderEgressMigration 改写，不要求手工改 schema_migrations。
 	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
