@@ -12,6 +12,8 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - 冲突面 3 处：`backend/internal/database/migrations.go`（上游 v80～v82 照收、内镜 9001 仍在列表末项、`CurrentSchemaVersion` 仍取 9001）、`backend/internal/app/service.go`（两侧各自加字段，都保留）、`docs/content/docs/progress/pending-test.mdx`（两侧章节都留）。其余 15 个双方改动文件自动合并，逐只比对后确认上游改动原样落在本分支树上、本分支增量未丢。
 - 结构账本：上游 Schema 79 → 82（v80 支付订单实收金额/货币/汇率/支付方式并回填、v81 方舟真人素材三表、v82 缓存写入价与用量列）；本分支仍为保留段 9001，`/api/health/ready` 的 `schema.current`/`expected` 应仍读回 9001。
 - 已验证（本机容器 `yingce-gobuild:dev` / `yingce-webbuild:merge`，跑在合并树快照 `gate-tree` 上）：`go build ./...`、`go vet ./internal/...` 退出码 0；`go test -count=1 -timeout 30m ./internal/...` 37 包通过（`internal/app` 415.9s），唯一失败 `internal/prompts` 的 12080 字节断言为 CRLF 检出假红。前端 `tsc --noEmit` 退出码 0；`bun test test/` 合并后 3144 pass / 19 fail / 1 error，基线 3088 pass / 20 fail / 1 error，失败名单差集「新增为空」，基线多出的是 `axios.create` 5000ms 超时 flake。
+- 续合并（2 提交）：`b21b0efc` 是 `#965` 看图压缩、`08488303` 是电商作品入库识别。`#965` 与本分支 `main` 既有实现同题，上游版本少缓存层与 `cloudAgentDropOmittedImages`，故 `text_model_image_compression.go`、`text_model_image_compression_test.go`、`provider_media_hydration.go`、`cloud_agent_vision_delivery_test.go` 四个文件按本分支超集解决（解决后与合并前 `main` 逐字节一致），实际并入的代码只有 `task_media_assets.go`。
+- 待定：是否把本分支的缓存层与摘图策略反向提交给上游（当前 `#965` 已合入精简版，两边会持续分叉）；若上游后续增强该路径，需按同题实现重新比对。
 - 注意：合并前 `web/src/assets/yoru/*.webp` 因 `.gitattributes` 的 `web/src/** text eol=lf` 通配被当作文本转换行尾（磁盘字节其实与 blob 一致），工作区恒为「已改动」并直接挡住 `git merge`——上游本轮也改了这三个文件，所以必然撞上。修复提交在 `feature/image-compression`（`e50f7153`，让二进制 `-text`），未进入 `main`；本轮在 main 上是靠本地属性覆盖让合并通过的，下一轮若该规则仍未并进 main 会再次触发。
 - [ ] 部署后核对 `/api/health/ready`：`build.version=v1.7.3.7`、`schema.current == expected == 9001`、`ready=true`；`schema_migrations` 新增 80/81/82 且 9001 的 `applied_at` 保持原时间。
 - [ ] 在停库后的**新备份**上预演 `migrate-schema up` / `verify`：v80 会对有数据的 `payment_orders` 做回填（`charge_amount_fen=amount_fen`、`charge_currency=currency`），要逐表核对行数与金额；v81/v82 是建表与加列。
@@ -41,6 +43,15 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - [x] 部署后核对 `/api/health/ready`：`build.version=v1.7.3.4`、`schema.current == expected == 9001`、`ready=true`；`schema_migrations` 的 78 `applied_at=2026-11-02 15:07:42.147190634Z`，9001 的 `applied_at` 保持 `2026-10-12 01:14:32.864590311Z`。
 - [x] 在停库后的新备份上预演 `migrate-schema up` / `verify`：两次均返回 `{"current":9001,"expected":9001,"ready":true}`；上线后快照与部署前逐表行数一致（`tasks` 1572、`resources` 252、`billing_orders` 1363、`credit_ledger_entries` 2681、`provider_egress_objects` 6，短剧六表均为 0），任务状态计数也不变。
 - [x] 部署后抽查：后端二进制含 `v1.7.3.4` 且不含 `v1.7.3.3`；启动 5 分钟日志 `level=ERROR|panic|invalid Pi tool` 计数为 0；`GET /api/admin/settings/provider-egress` 返回 401；1888 实际下发的 `canvas-cloud-agent-panel-e1vtwMdl.js` 命中新增文案「回到底部」。真实业务出图回归留待日常使用。
+## 电商生图：作品已生成，但保存未完成：登记作品失败
+
+- 问题：v1.7.3.5 起，电商页通过 `POST /api/workbench/tasks` 提交的图片任务把电商项目 ID 写入 `tasks.project_id`。作品落库前的 `mediaTaskProject` 只认画布和业务项目，查不到电商项目就返回“任务所属画布或项目已不存在”，并标为不可重试的 `register` 阶段失败。生图本身成功，但作品没有下载入库；请求明细按阶段显示“生成成功 · 文件保存成功 · 登记素材失败”，实际文件并未保存。用户点击「重新保存」也会被同一检查拦下。
+- 已修复：`mediaTaskProject` 在画布和业务项目都不存在时再查当前用户的电商项目。查到时作品照常入库、登记到用户素材库，不挂到任何业务项目素材库，和 v1.7.3.5 之前电商任务不带 `project_id` 时一致。查不到时仍按“任务所属画布或项目已不存在”拒绝。
+- 已失败的任务：上线后可在电商页对该图点击「重新保存（不扣费）」，或由管理员在请求明细里人工恢复保存，不会重新生成。上游只返回 URL 的作品依赖该地址仍有效；内联返回的作品暂存 7 天。
+- 本地验证：临时测试（未保留）复现了原报错；修复后新任务直接交付成功，按线上已失败状态构造的任务经「重新保存」后交付成功，不存在的项目 ID 仍被拒绝。`go test ./internal/app` 通过。未连接真实渠道，未做浏览器验收。
+- [ ] 电商页生成图片，结果正常显示，任务中心显示素材登记成功。
+- [ ] 升级前已失败的电商图片点击「重新保存（不扣费）」后显示作品，账单不新增扣费。
+
 ## 文本模型定价：缓存写入价（Schema 82）
 
 - 已实现：系统渠道模型的文本 Token 价格档新增「缓存写入」售价与成本价（每百万 Token），默认 0 表示缓存写入不单独收费；原「缓存」改名「缓存命中」。统一调价、渠道导入导出、公开目录和前台统一定价都带上该字段；视频 Token 必须为 0。
