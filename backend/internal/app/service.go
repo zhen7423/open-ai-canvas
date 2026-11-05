@@ -115,6 +115,9 @@ type Service struct {
 	// textModelImageCache 缓存按模型上限压好的图片发送副本：Agent 每步都会重新组装同一批参考图，
 	// 没有缓存就等于每步重新解码+编码一遍。
 	textModelImageCache textModelImageCache
+	// dramaTails 跟踪调度循环之外的尾帧抽取；dramaBackgroundRunner 为空时用后台 worker，测试替换为同步执行。
+	dramaTails            dramaTailWorker
+	dramaBackgroundRunner func(fn func()) bool
 }
 
 const taskWorkerConcurrency = 3
