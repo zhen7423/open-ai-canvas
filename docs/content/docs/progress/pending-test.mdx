@@ -15,13 +15,16 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - 已验证（容器，跑在合并树快照 `9a144f4b` 上）：后端 build=0、vet=0、37 包通过（`internal/app` 391.3s），唯一失败 `internal/prompts` 的 12080 字节断言仍是 CRLF 检出假红（该 blob 本批未改，上一轮的 LF 副本结论继续适用）。前端 `tsc --noEmit`=0；全量 `bun test` 第一跑 3172 pass / 15 fail / 0 error，第二跑 3173 pass / 14 fail / 0 error；基线 3168 pass / 15 fail / 0 error（447 文件，合并后 448 文件，多出的是上游本批新增 `web/test/reference-video-billing.test.ts`）。
 - 红数变多的定性过程（记入口径）：第一跑比第二跑多出的那条是 `canvas video concat with the shipped FFmpeg core > audio that starts after the picture retains its delay in each clip`，报错在 `@ffmpeg/core` 的 `exec` 里抛、耗时 264ms（同组其它用例 2000～3000ms）。三条证据说明它不是本轮回归：被测实现 `web/src/lib/canvas/canvas-video-concat.ts` 与基线 md5 相同（`d708b6d3…`）、本批上游既没改该实现也没改该测试、单独复跑该文件 3 次都是 5 pass / 0 fail。同一册的该套件上一轮还出现过 bun 自身段错误（坑 21），属同一处 WASM/解释器不稳。
 
+- 部署（2026-11-06 10:41～10:47，LAN 栈）：`build backend web`（backend `f7353dd6a293`、web `aced19725afc`，构建日志零 ERROR）→ 优雅停后端（停库前 `activeWorkerTasks=0`、`version=v1.8.0`）→ 卷内第 **27** 份备份 `pre-merge-v181-20261106T024148Z`（卷里只剩单个 1.3G 的 `.db`，`wal_shm=0`）→ 在这份新备份的宿主副本上预演 `up`/`verify`（都返回 `current=expected=9001`）→ `up -d`。宿主诊断副本与导出的二进制用完已删，卷内 27 份备份一份未删；读数在 `.local/merge-v181/db-*.txt` 与 `billing-*.txt`。
+- 部署遗留：88/89 的自动开启分支在本机没有被执行到（候选 0 个），所以「视频模型打开参考视频计费后按带参考价计费」这条主路径只有单测与迁移代码背书，等管理员真实开启后需在浏览器与账单两侧各验一次。
+
 - 待验：
-- [ ] 部署后核对 `/api/health/ready`：`build.version=v1.8.1`（线上当前是 v1.8.0）、`schema.current == expected == 9001`、三项检查 true，两容器 `Up (healthy)`，启动日志 `level=ERROR|panic|invalid Pi tool` 计数 0。
-- [ ] 预演与线上都要用 `.local/merge-v181/inspect-billing.mjs` 比对 88/89 的回填结果：开关为真的视频模型数应等于「价格档全为 Token 计费」的视频模型数；按 Token 档中「带参考售价 ≠ 输出售价」应为 0；按秒档的带参考售价应为 0；「开启开关却含按秒档」应为 0；历史 `billing_orders` 的 `reference_video_billed` 应为 0；`channel_model_price_tiers` 行数不变（只改值不改行）。
-- [ ] 账本：新增 88、89 两条 `applied_at` 为本次时间，**9001 仍保持 2026-10-12 01:14:32**；其余业务行数逐项相等（`canvas_mutation_receipts` 允许按 7 天保留期变小，见手册 §8 例外行）。
+- [x] 部署后核对 `/api/health/ready`（2026-11-06 10:43）：`build.version=v1.8.1`（上一批线上是 v1.8.0）、`schema.current == expected == 9001`、`ready=true`、三项检查 true；两容器 `Up (healthy)`；启动 5 分钟内 `level=ERROR|panic|invalid Pi tool` 计数 0；`docker cp` 出的后端二进制 89741496 字节含 `v1.8.1`、不含 `v1.8.0`/`v1.7.3.7`；内镜路由仍 401；1888 首页入口换成 `assets/index-CCROxbVl.js`，`channels-page-kpS58VEe.js` 已下发且含「参考视频计费」，更新说明弹窗 chunk 含 `v1.8.1`，`admin-shell-cXVirzHU.js` 里「出站内镜」仍在。
+- [x] 88/89 的回填核对（2026-11-06，本机实测为**零回填**，并更正上一条判据的过度概括）：本机 66 个渠道模型里只有 1 条 Token 档，且它属于文本模型 `MODEL_000092`（`capability='text'`、已停用），而 88 的候选条件是 `capability='video'` 且不含按秒档 → 候选 0 个。预演与线上因此都是：`reference_video_billing=true` 的模型 0 个、Token 档带参考售价非零 0 条、按秒档带参考售价非零 0 条、带参考成本非零 0 条、历史 `billing_orders` 的 `reference_video_billed=1` 0 条、「开开关却含按秒档」0 个，档位行数 73 与金额合计 281471936 未变。**更正**：上一条写的「Token 档中『带参考售价 ≠ 输出售价』应为 0」只对被 88 打开开关的视频模型成立；本机那条文本档保持不等（售价 > 0、带参考售价 0）正是 88 不该碰它的证据，预演实测该计数为 1。判据本身有效：只要有视频模型被打开开关，它的名下 Token 档两价必须相等。
+- [x] 账本与行数（2026-11-06）：预演副本新增 88 `reference_video_billing` = 02:44:52、89 `reference_video_cost_price` = 02:44:52，线上为 02:45:28 同一对号；**9001 仍是 2026-10-12 01:14:32**，79～87 与原时间逐条不变。预演前后与线上对部署前的通用读数差集只有这两行账本，业务行数与账单口径逐项相等（tasks 2084、resources 298、assets 285、billing_orders 1793、ledger 3504、`reserve` 合计 0、available 11100313124458、reserved 12540000），启动巡检 `stale_orders=107 reserved=0 running=2 uncertain=105` 与部署前一致。唯一行差仍是回执表按 7 天保留期瘦身：3056 → 3051，`MIN(created_at)` 从 10-30 02:36:17 抬到 02:45:55（越过 02:45 的 7 天界限）、`MAX` 未变（11-05 06:42:04），按手册 §8 例外行判为预期。
 - [ ] 真实浏览器验收：后台渠道模型编辑页出现「参考视频计费」开关与带参考视频的售价/成本价两栏（按秒档不出现售价栏），保存后请求明细与账单在挂参考视频时按带参考价计费；不挂参考视频时金额与升级前一致。
 - [ ] 真实浏览器验收：短剧制作台选到「要求至少一张参考图」的视频模型时预演给出说明且保留生成模式；时间线合成失败时文案写明环节；声明式插件在结果清单为空时仍继续晚到查询。
-- [ ] 推送仍未做：本地 `main` 将比 `origin/main`（`b2a1d6cd`）领先 25 个提交 = 6（v1.8.0 批次）＋ 18（v1.8.1 上游）＋ 1（本轮合并提交），等他逐次授权。
+- [ ] 推送仍未做（2026-11-06 实测）：`origin/main` 停在 `b2a1d6cd`，本地 `main` 领先 25 个提交 = 6（v1.8.0 批次）＋ 18（v1.8.1 上游）＋ 1（合并提交 `a213a31b`）；本文件的部署核销还会再加 1 个。等用户逐次授权，且绝不推 `upstream`。
 
 ## 上游合并 v1.8.0（4 提交）
 
