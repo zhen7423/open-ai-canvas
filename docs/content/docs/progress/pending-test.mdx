@@ -5,6 +5,24 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 上游合并 v1.8.0（4 提交）
+
+- 合并范围：上游 4 提交（`ca220acf`），含 `2fe3ca13` 发版提交（`VERSION` v1.7.3.7 → v1.8.0）、后台方舟素材组视图重新排版（类型卡片兼作筛选、工具栏单行、空态），以及两个电商修复：拼成长图默认只拼本轮作品（`web/src/pages/ecommerce/index.tsx`）、`creative-directions` 不再依赖 `AI_MODE`（`backend/internal/app/ecommerce_agent_workbench.go` 及其测试）。
+- 分支与起点：本轮在 `main` 上合并。开工取证：工作区干净、无 `MERGE_HEAD`，`main` = `origin/main` = `b2a1d6cd`（上一轮已推平）。
+- 冲突面 1 处：`docs/content/docs/progress/pending-test.mdx` 顶部块（本分支的合并记录节 vs 上游本轮三个新功能节），两侧都留、本分支在前；`CHANGELOG.md` 自动合并，上游 v1.8.0 整段原样收进第 2 行起。历史条目未重写。
+- 交集 2 个文件逐只比对：合并后「本分支相对上游的增量」与合并前逐行一致（两只都是 0 差异）。其余 7 个文件是本分支自 v1.7.3.7 以来没碰过的单侧改动。
+- 结构账本：上游本轮**没有新增迁移**，`migrations.go` 不在改动清单里；本分支 9001 仍是列表末项、`CurrentSchemaVersion` 仍取 9001。部署时 `schema_migrations` 不应新增任何行，9001 的 `applied_at` 应继续是 2026-10-12 01:14:32。
+- 样式耦合实测：上游新组件沿用 `admin-ark-*` 命名（如 `admin-ark-groups`、`admin-ark-stat`），新 `ark-admin.css` 里 31 个 `.admin-ark*` 选择器与本仓库 `admin-ui.css` 里 25 个的**交集为 0**，两套表面对象不同，不存在层叠覆盖；页面级 import 在 `ark-private-assets-settings-page.tsx` 第 14 行。
+- 已验证（容器，跑在合并树快照 `412292b7` 上）：后端 build=0、vet=0、37 包通过（`internal/app` 443.9s），唯一失败 `internal/prompts` 的 12080 字节断言仍是 CRLF 检出假红（该 blob 与上一轮相同，LF 副本单跑 0.895s 通过）。前端 `tsc`=0，`bun test` 3169 pass / 14 fail / 0 error；基线 3168 pass / 15 fail / 0 error，两侧都按手册 §6 的口径显式挂各自 `backend`，所以跨端一致性用例这一轮全绿，合并后的 14 条全部是手册记的环境红（9 条 changed-file formatting gate + 2 条 commit image reuse + 3 条 digest promotion），差集「合并后新增」为空。
+- 门禁插曲（记为环境事实，不是代码问题）：基线首跑在 `test/canvas-video-concat.test.ts` 处 bun 自身段错误崩溃（`panic(main thread): Segmentation fault`，退出码 132，Bun v1.3.9 / WSL v6.18.33，峰值 RSS 0.78GB）；同一条命令原样复跑跑完（180.7s），结果如上。合并后那一跑一次通过（149.5s）。挂载生效已用 md5 复核：容器内 `/app/web/src/.../ark-admin-groups-tab.tsx` 与基线树、合并树各自的 md5 逐一对得上。
+
+- 待验：
+- [ ] 部署后核对 `/api/health/ready`：`build.version=v1.8.0`（线上当前是 v1.7.3.7）、`schema.current == expected == 9001`、三项检查 true，两容器 `Up (healthy)`，启动日志 `level=ERROR|panic|invalid Pi tool` 计数 0。
+- [ ] 预演与线上账本应为**空转**：本轮无新迁移，`migrate-schema up` 后 `schema_migrations` 行数不变、87 与 9001 的 `applied_at` 都保持原值；业务行数与账单合计逐项相等。
+- [ ] 真实浏览器验收：后台「方舟素材库」素材组视图（4 张类型卡片兼作筛选、工具栏单行不换行、空态文案与图标）、明暗主题与窄屏；审核页同步改版后仍可用。
+- [ ] 真实浏览器验收：电商页在不设置 `AI_MODE` 时点「开始创作」不再报 `Unexpected token` JSON 解析错；同一项目做完第二组后「拼成长图」只含本轮作品。
+- [ ] 上一轮遗留仍未做：内镜实图出图验收、`internal/prompts` 策略正文只剩 14 字节余量（上游再加一句就会真红）、本分支看图压缩缓存层未回推上游。
+
 ## 上游合并 30 提交（2026-11-05，v1.7.3.7 之后未发版）
 
 - 合并范围：上游 30 提交（`cb8a6b53`），含 Agent 批量生成与制作看板、画布姿势库（Schema 85）、方舟素材组三类授权与后台审核（Schema 86）、灵感上新定时同步（Schema 87）、分时与上下文 Token 价格档（Schema 84）、后台技能管理（Schema 83）、生成完成提醒与标签页标题、@ 引用多列预览、短剧剪映草稿导出与资产包导入导出，以及 #964 #951 #887 #836 #721 #724 #907 #915 #643 #881 #726 #764 等问题修复。上游本轮没有发版提交，`VERSION` 仍是 v1.7.3.7。
@@ -66,6 +84,27 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - [x] 部署后核对 `/api/health/ready`：`build.version=v1.7.3.4`、`schema.current == expected == 9001`、`ready=true`；`schema_migrations` 的 78 `applied_at=2026-11-02 15:07:42.147190634Z`，9001 的 `applied_at` 保持 `2026-10-12 01:14:32.864590311Z`。
 - [x] 在停库后的新备份上预演 `migrate-schema up` / `verify`：两次均返回 `{"current":9001,"expected":9001,"ready":true}`；上线后快照与部署前逐表行数一致（`tasks` 1572、`resources` 252、`billing_orders` 1363、`credit_ledger_entries` 2681、`provider_egress_objects` 6，短剧六表均为 0），任务状态计数也不变。
 - [x] 部署后抽查：后端二进制含 `v1.7.3.4` 且不含 `v1.7.3.3`；启动 5 分钟日志 `level=ERROR|panic|invalid Pi tool` 计数为 0；`GET /api/admin/settings/provider-egress` 返回 401；1888 实际下发的 `canvas-cloud-agent-panel-e1vtwMdl.js` 命中新增文案「回到底部」。真实业务出图回归留待日常使用。
+## 后台方舟素材库：素材组视图重新排版
+- 问题：`/admin/settings/ark-private-assets` 素材组视图的概览数字挤在一个大框里，搜索框和筛选、按钮分成两行错位，空列表只有一个小图标，表格下方还有一条空的分页栏。
+- 已实现：概览改为 4 张独立卡片（图标、数字、说明），真人 / 虚拟 / 版权 IP 卡片点击即按类型筛选（`aria-pressed`，再点取消，工具栏显示「类型」筛选标签），原「全部类型」下拉移除；待审核卡片有待审时显示警示色和「去审核」，点击切到上传审核，原黄色提示条移除。工具栏单行：搜索、归属、授权状态在左，图标刷新和「新建平台素材组」在右。表格素材组列加类型图标，类型、归属两行显示，素材数量和待审 / 审核中用徽标，方舟侧已不可用的组标「不可用」。空列表有图标、说明和新建按钮，筛选无结果时给「清除筛选」。素材组和上传审核两个列表只有多于一页时才显示分页栏。
+- 本地验证：`tsc --noEmit` 无错误，改动文件 Prettier、eslint 通过；隔离环境（临时数据目录后端 + Vite）真实路由截图检查了 1440 明暗主题、类型筛选状态、1024 宽和 390 手机宽，均为空数据。
+- [ ] 浏览器：有真实素材组数据时检查表格各列对齐、长名称截断和横向滚动；待审核大于 0 时卡片变色且能跳到上传审核。
+## 电商 Agent：「拼成长图」混入之前几轮的作品
+
+- 问题：本轮交付区的「拼成长图」和「导出全部」共用同一份导出列表，列表由 `commerceCanvasImages` 生成，包含 `previousImages`。继续做下一组后，本轮 5 张会和上一轮 5 张拼成 10 张的长图。
+- 已修复：没勾选作品时，「拼成长图」只拼本轮 `plan.images` 中已完成的图片；勾选了作品时仍按勾选拼。可拼的图片不足 2 张时不显示按钮。「导出全部 N 张」不变，仍导出全部轮次。
+- 本地验证：`tsc --noEmit` 无错误，`index.tsx` Prettier 通过。未在浏览器里验收。
+- [ ] 浏览器：同一项目做完第二组后点「拼成长图」，长图只含本轮的张数；勾选几张（可跨轮）后再拼，长图只含勾选的图片。
+
+## 电商 Agent：点「开始创作」报「商品分析未完成：Unexpected token … is not valid JSON」
+
+- 问题：「开始创作」先提交 `creative-directions` 文本任务，前端只发一句“分析真实商品，并推荐四套完整视觉风格。”，依赖后端把它换成四套方向的 JSON 合同，并在完成后把结果整理成 `{recommendationId, directions}`。这两步原先只在 `AI_MODE` 为 `live` / `mock` 时执行；`docker-compose.deploy.yml` 不向 backend 传 `AI_MODE`，线上默认 `disabled`，识图模型只收到那一句，回了 Markdown。任务照常成功并扣费，前端 `JSON.parse` 失败。「跳过选方向」的策划提示词由前端自带 JSON 要求，不受影响。
+- 已修复：`prepareEcommerceWorkbenchTask` 处理 `creative-directions` 时不再看 `AI_MODE`，始终改写提示词、写入 `ecommerceAgentAdapter`，完成后校验并保存四套方向。模型仍返回非 JSON 时任务失败，提示“分析模型返回的内容不是有效 JSON（可能被截断），请重试或更换模型”。`planning`、`product-understanding` 和 `POST /api/ecommerce/creative-directions` 不变。
+- 本地验证：临时测试（未保留）在 `AI_MODE` 为空时经 `CreateTask` 和 `processTask` 跑完整方向任务：修复前任务提示词仍是前端那一句，与线上一致；修复后上游收到 JSON 合同，返回 JSON 时得到推荐 ID 和 4 套方向，返回 Markdown 时任务失败并给出上述提示；任务接口返回的 `metadata.ecommerceDraft` 是服务端草稿，带 `references`、`skus` 数组，前端能恢复快照。`ecommerce_agent_setting_test.go` 的两个用例补了有效项目草稿，因为方向任务现在会先读草稿再查模型。`go test ./internal/app -run 'Ecommerce|Commerce'`、`go test ./internal/handler -run 'Ecommerce|Commerce'`、gofmt 通过。未连接真实渠道，未做浏览器验收。
+- [ ] 部署后（不设置 `AI_MODE`）：电商页上传商品图，点「开始创作」后弹出四套风格；该任务 `GET /api/tasks/:id` 的 `prompt` 是服务端长提示词，不再是那一句。
+- [ ] 选定一套风格后自动策划并出图，成品风格与所选方向一致；「跳过选方向」与修复前一致。
+- 已知边界：不设置 `AI_MODE` 时，选定方向后的策划仍走旧工作台路径：所选方向的名称、说明、标签和知识约束由前端写进策划提示词，服务端不注入完整 visualSystem，也不做张数一致等严格校验。
+
 ## 生成完成提醒、标签页标题与设置页分组
 
 - 问题：生成成功没有任何反馈，页面在后台或已离开画布时更不知道何时完成；浏览器标签页始终只显示品牌名；设置页 11 个分类平铺，主题只能在顶栏切换。
