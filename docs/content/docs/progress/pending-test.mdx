@@ -5,6 +5,25 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 上游合并 v1.8.1 之后未发版的一批（7 提交）
+
+- 合并范围：上游 7 提交 `8611fc0e` → `644176fd`（`#976` Claude 400 三连修、`#977` 阿里 Wan 3 音频参数声明、`#978` 参考素材发送方式、`#974` 素材详情统一解析原图访问地址、`#982` 技能 frontmatter YAML 块标量＋「我的」角标、`#981` 声明式协议插件宿主与 Anthropic 线、`#979` 流式缺结束标记不再判成功）。上游 `VERSION` 仍是 v1.8.1，`CHANGELOG.md` 本批没有新段，所以按「未发版的一批」收在本仓库分支补充里，不抬版本号。
+- 分支与起点：在 `main` 上合并。开工取证四项全过：工作区 clean、无 `MERGE_HEAD`、`main` = `origin/main` = `6c3c8c97`（与 fork 差集 0/0）、`upstream/main` = `8611fc0e`；`git fetch upstream` 后上游号 `644176fd`，落后上游 7 个提交、本分支独有 79 个（`git rev-list --left-right --count main...upstream/main` = 79/7；0/0 那个差集只对 fork 成立）。另有 `.local/pr-rebase`、`.local/wt-pr-upstream` 两个上一轮留下的 worktree，本轮没动它们。
+- 变更面：48 文件、1382 增／225 删。三项必查都过——**上游没有新增迁移**（`migrations.go` 本批零改动，内镜台账 9001 仍是列表末项、`CurrentSchemaVersion` 仍取 9001、注释「上游现已推进到 89」继续成立，无需改号）；**部署侧零 churn**（`Dockerfile`／`nginx.conf`／`docker-compose*`／`scripts/`／`.env*` 一个都没被碰，LAN 栈的构建与上线步骤沿用手册第 8 节）；上游自带回归由 build+vet+test 三条一起兜，本轮没有新红的后端包。
+- 冲突面 1 处：`backend/internal/app/provider.go`（同题实现）。上游在 `if resumedProviderRequestID(ctx) == "" {` 之后插入 `validateReferenceTransportProtocol(ctx, input)` 守卫，并把 `providerMediaHydrationPolicyFor` 返回的 policy 结构加了 `forceBase64`／`explicitTransport` 两个字段；本分支在同一位置把那个函数换成了 `providerMediaRequirementFor`（返回 `{policy, reason}`，出站内镜要整份 `mediaRequirement`）。解法＝上游守卫三行在前＋本分支 `mediaRequirement` 两行在后，丢掉上游那两行 `mediaPolicy :=`／`hydrateGenerationMedia(..., mediaPolicy)`；`providerMediaHydrationPolicy` 结构体里上游新增的两个字段随自动合并原样落在本分支沿用的类型上，`providerMediaRequirementFor` 只是给它加了 reason 维度，因此 #978 的 URL/Base64 覆盖在本分支函数名下完全生效。解完全仓冲突标记 grep 为 0，且没有任何 Go 源码仍引用旧函数名 `providerMediaHydrationPolicyFor`（还剩它的地方只有两处历史叙述——`CHANGELOG.md` 与本文件——以及被跟踪的旧构建产物 `backend/server` 里的符号名；后者是二进制，不参与编译）。
+- 交集比对：8 只双方都改过的文件（`provider.go`、`provider_media_hydration.go`、`provider_test.go`、`provider_text_agent_stream.go`、backend-database／code-map／features／pending-test 四份文档）。**判据口径**：把「合并前本分支相对共同祖先的增量」（`8611fc0e` → `6c3c8c97`）与「合并后本分支相对上游的增量」（`upstream/main` → 合并树）各自只取 `^[+-]` 行逐行比对，8/8 逐行相同——即本分支增量在合并前后一字未变。注意别看反方向：直接比「上游自身改动」与「合并带来的改动」是 0/8 相同（同一只文件的增删行会因对方也在改而必然不同），这条路不成立——本分支增量原样保留：`providerMediaRequirementFor`＋`preparePublicEgressImageReferences` 调用链、Agent 看图的图片缓存与 `Omitted` 摘图回执、`cloudAgentVisionStep` 软失败口径、后台「内镜」导航。上游新增的 5 份文档条目按行回读全部落在合并树里：`backend-database.mdx` 的「参考素材发送策略」节（说明它不新增表、列或迁移版本）、`code-map.mdx` 与 `http-api.mdx` 的新节、`features.mdx` 末尾的 `## 参考素材发送方式`（仍排在本分支 `## 本参图片出站内镜` 之后，没有被并入它的要点列表）、`pending-test.mdx` 末尾的上游待验节。上游还改了 `plugin-packages/anthropic-messages.yingce-plugin`（二进制 8919→8947）与它的 `manifest.json`／`docs/interface.md`，本分支没碰过这三只，属整份取上游。
+- 门禁（容器，跑在合并树快照 `7d0894d1` = `commit-tree(合并 index, HEAD, upstream/main)` 的 detach worktree 上，避免并发会话把树改成半写状态）：
+  - 后端：`go build ./...` 退出码 0、`go vet ./internal/...` 退出码 0、`go test -count=1 -timeout 30m ./internal/...` 退出码 1，37 包 ok，唯一失败 `internal/prompts > TestLoadAgentPoliciesUsesSingleVersionedContract`（`single runtime policy exceeds 12KB: 12080 bytes`）。定性三条证据：被测 `backend/internal/prompts/agent-system-policy.md` 的 blob `53930bbb` 在 `6c3c8c97`、`upstream/main`、合并后三处逐字节相同；本批上游既没改该文件也没改该测试；把该树整份拷到容器 `/tmp` 后把 `.md` 转成 LF 单跑该用例，两次都 PASS（0.774s、0.670s，日志 `.local/merge-v181b/logs/backend-prompts-lf.log`）。字节口径按 `parsePolicyDocument` 的语义原样复算：磁盘 CRLF 版 12131 字节、blob 的 LF 版 12037 字节，全文 94 个 `\r`；文首元信息是四行，剥掉它并连同首尾空白一起 `TrimSpace` 后，CRLF 正文 12080 字节、LF 正文 11992 字节，差 88 字节＝留在正文里的 88 个 `\r`（另 6 个随元信息与首尾空白一起去掉）。12080 > 12000 判超限、11992 < 12000 过关，跨过线的正好是行尾而不是内容——仍是 CRLF 检出假红，不是本轮回归。`internal/app` 本机 453.9s（默认 10m 会撞超时，必须带 `-timeout 30m`）。
+  - 前端：`tsc --noEmit` 退出码 0；`bun test test/` = 3177 pass / 14 fail / 0 error，449 文件，166.0s。基线用同一镜像叠 `6c3c8c97` 的 `web/src`＋`web/test`＋`backend`（两侧都显式挂 backend，所以三条「与后端白名单保持一致」与 `Cannot find module .../tools/seed/tools.json` 都不再现），= 3173 pass / 14 fail / 0 error，448 文件，159.4s。文件数差的 1 只正是上游本批新增的 `web/test/media-transport.test.tsx`。失败名单双向差集为空：合并后新增 0 条、基线独有 0 条，14 条全是手册记的环境红（9 `changed-file formatting gate`＋2 `commit image reuse`＋3 `digest promotion`，要容器里有 git／prettier／CI 脚本）。本轮没有红数变多，未触发三条定性证据流程（后端那条除外，已按证据定性）。凭据落在 `.local/merge-v181b/logs/`：`backend-gate.log`（三个退出码与逐包结果）、`backend-prompts-lf.log`、`web-full.log`／`web-baseline.log`（两份全量结果）、`web-merged-run-stdout.txt`／`web-baseline-run-stdout.txt`（内含 `TSC_EXIT=0`）、`merged-fails.txt`／`baseline-fails.txt`（两份失败名单，`comm` 双向为空）。
+- 需要管理员在真实浏览器与真实渠道上验证（本轮只做到编译级与自动化测试级）：
+- [ ] 后台渠道编辑出现「参考素材发送方式」（图片／音频／视频各一档：协议默认、URL、Base64），模型「能力与参数」可覆盖且优先级为模型 > 渠道 > 协议，模型选「协议默认」能取消渠道的强制值；未设置时行为与升级前逐字相同。渠道复制、导入导出要确认策略随渠道走、不带素材签名或凭证。
+- [ ] 出站内镜与发送方式的组合（**本轮只记录口径，未改代码**）：内镜的触发判据 `requirement.policy.requireURL` 在 `hydrateGenerationMedia` 之前算一次，而上游的 URL／Base64 覆盖是在 hydrate 内按图片／视频／音频分组改写 policy 的，两者不同源。于是两个组合要实测：① 协议本身不要求公网地址、管理员把视频渠道的图片发送方式设成 URL —— hydration 直接走签名 URL 分支，内镜镜像那层因 `requireURL=false` 不介入；若本地主存储签出的地址上游取不到，任务会以上游拉取失败收场，而不是像现在这样由内镜补一份公网地址。② 协议要求公网地址、发送方式设成 Base64 —— 上游 `referenceMediaPolicy` 直接报「当前协议要求公网素材 URL，不能使用 Base64」，内镜不会补位。两条都不是本轮合并造成的回归，而是上游新功能与本分支内镜需要打通的口径；按既有裁决先只记录，等真实渠道验证结果再决定是否让内镜认这条覆盖。
+- [ ] Agent 看图路径不受影响目前只有代码背书（`inlineVision` 为真时上游的 `referenceMediaPolicy` 整段跳过、`imageOnly` 仍由本分支的压缩与摘图接管）：请在真实浏览器跑一次超限图场景，确认模型按文字说明「这张图读不了」，而不是整步失败或凭节点标题猜画面。
+- [ ] `#979` 三协议的截断判定：chat-completion 要有 `[DONE]` 或 `finish_reason`、responses 要有 `response.completed`／`response.incomplete`（`response.failed` 直接报错）、claude-api 要有 `message_stop` 或 `message_delta.stop_reason`。请断一次上游连接验证：半截内容不再算成功、前端不再 JSON 解析失败、计费停在未完成而不是按半截用量扣费。
+- [ ] `#982` 技能 frontmatter 用 YAML 块标量写 `description` 能正常导入（zip 与 GitHub 两条发现路径都试），作者本人卡片出现「我的」角标；`#974` 素材详情在本地主存储与对象存储两种部署下都能取到原图地址。
+- [ ] 按 AGENTS.md 的 `bun scripts/verify-before-push.mjs` 本机未运行（无 Bun、无 Node 端 CI 脚本环境），本轮以手册第 6 节的容器门禁替代：后端 build/vet/test 三条、前端 tsc＋全量 bun test＋基线名单差集。
+- 本轮状态：合并与文档登记完成，**未部署、未推送**，等用户逐次授权。
+
 ## 上游合并 v1.8.1（18 提交）
 
 - 合并范围：上游 18 提交（`8611fc0e`，含发版提交 → `VERSION` v1.8.0 → v1.8.1），视频模型「参考视频计费」（Schema 88–89、#973）、声明式协议晚到结果与 JSON 清单（#966/#971）、时间线合成保存失败环节与原因（#967）、短剧设定图画幅与视频模型选择（#968/#969）。注意上游 v1.8.1 的发版说明里还写了一条「电商 `creative-directions` 不再依赖 `AI_MODE`」——那笔修复属于上一批（已在合并提交 `3f7372bb` 进来），本批 18 个提交里没有电商改动；按「历史条目不重写」的口径，上游段落原样收，不改动它。
@@ -5438,3 +5457,9 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - [ ] 真实浏览器验收看板：39 镜头分镜一次搭建的布局、背板配色（明暗主题）、入场动画与连线淡入、超过 128KiB 增量时退化为刷新后的显示；HUD 计数、跟随开关关闭后只轻闪不移镜头。
 - [ ] 真实浏览器验收问卷：16 项分组表单的滚动与键盘操作、决策确认单节点的位置与内容、`decisionNodeId` 传回后 Agent 是否以它为准。
 - [ ] 推送前需按 AGENTS.md 运行 `bun scripts/verify-before-push.mjs`（含格式检查、lint、全量前端测试与后端分片测试），本轮未运行。
+
+## 待用户验证：参考素材发送方式
+
+后台编辑渠道可分别设置参考图片、音频、视频的发送方式（协议默认、URL、Base64）；模型「能力与参数」可覆盖，优先级为模型、渠道、协议。模型选择「协议默认」可取消渠道强制值。未设置时不改变现有行为。此项是输入素材传输设置，与生成结果 response_format 无关。
+
+URL 使用归属校验后的资源访问地址，本地存储也可签发厂商访问链接；Base64 使用上传文件实际内容。需要 multipart 文件的协议请保持默认，助手识图保留实际像素路径。要求公网 URL 的协议不允许强制 Base64，不会自动重提生成。请由管理员按供应商支持情况设置并验证图片、视频、音频任务；本次不主动提交计费生成请求。
