@@ -324,8 +324,29 @@ var schemaMigrations = []migration{
 		// 邮件发送记录与用户邮件订阅（消费日报，默认关闭）；只建新表。
 		return tx.AutoMigrate(&model.EmailLog{}, &model.UserNotificationSetting{})
 	}},
+	{version: 92, name: "drama_reference_controls", checksum: "sha256:drama-reference-controls-v92", apply: func(tx *gorm.DB) error {
+		for _, change := range []struct {
+			entity any
+			fields []string
+		}{
+			{&model.DramaCast{}, []string{"ImagePrompt"}},
+			{&model.DramaSegment{}, []string{"ReferenceImagesJSON", "AudioCastIDsJSON"}},
+		} {
+			if !tx.Migrator().HasTable(change.entity) {
+				continue
+			}
+			for _, field := range change.fields {
+				if !tx.Migrator().HasColumn(change.entity, field) {
+					if err := tx.Migrator().AddColumn(change.entity, field); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}},
 	// 本仓库分支的出站内镜台账：先后登记在 51、55、57、58，每一次都因为上游占用同号而让位
-	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 91），
+	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 92），
 	// 因此固定落在保留段末项 9001，不再随上游发版改号。旧账本由
 	// normalizeLegacyProviderEgressMigration 改写，不要求手工改 schema_migrations。
 	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
