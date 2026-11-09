@@ -5,6 +5,19 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 上游合并 v1.8.3（4 提交）
+
+- 合并范围：上游 4 提交 `25bb866c` → `ee6c0ee2`，v1.8.3 发版批次（`VERSION` v1.8.2 → v1.8.3、`CHANGELOG.md` 加新段）。功能：后台顶部全局页面搜索（新 `web/src/pages/admin/components/admin-global-search.tsx`＋同名 `.css`、新 `web/src/pages/admin/lib/navigation-search.ts`；`admin-shell.tsx` 为每个菜单项补 `keywords` 并在移动端导航之后渲染 `admin-global-search-bar`）、分镜脚本节点生成状态不再叠加外层徽章遮挡标题（#990，改 `canvas-script-node.tsx`、`canvas-node-content.tsx` 各一处）、两条文档与发版说明。14 只文件＝6 新增／8 修改（314 增／44 删）。
+- 分支与起点：在 `main` 上合并。开工取证四项全过：工作区 clean、无 `MERGE_HEAD`、`main` = `origin/main` = `d463f46d`（本地与 fork 0/0）、`upstream/main` 本地回读上一轮已合到的 `25bb866c`；`HTTPS_PROXY=… git fetch upstream` 后上游号 `ee6c0ee2`，本分支落后 4 个提交。
+- 变更面三项必查——**迁移**：`backend/internal/database/migrations.go` 本批零改动，上游不加新号，本分支 `CurrentSchemaVersion = providerEgressMigrationVersion`（9001）与迁移列表末项（第 352 行）都不动。v1.8.3 发版段的「Schema 从 91 升至 92」对应上一批 `25bb866c` 已并入、并已随第 29 份备份预演部署过的版本 92，**部署时别把它当本批新迁移**。**部署侧**：`Dockerfile`／`nginx.conf`／`docker-compose*`／`scripts/`／`.env*` 零命中，且 `git diff --name-only 25bb866c upstream/main | grep -c '^backend/'` = **0**，即后端源码一行未改。**上游自带回归**：本批新增 2 只测试文件＋1 只 harness＋1 条既册新用例，共 5 条新用例在合并树里全绿，没复现历史上那两类上游自带红（类型漏改、golden CRLF）。
+- 冲突面 2 处（交集 4 只）：`web/src/pages/admin/components/admin-shell.tsx` 一处——上游给系统设置组 10 个条目加 `keywords` 并把 `keywords` 排进字段序，与本分支「出站内镜」条目挤在同一列表；处置＝先 `node docs/ops/resolve-conflict-theirs.mjs` 取上游结构（冲突原文件留档 `.local/merge-v183b/conflicts/admin-shell.tsx.conflict-original`），再按新约定把内镜条目补 `keywords: "出站内镜 内镜 交付形态 内联 镜像 素材 公网地址"` 放回方舟与第三方之间（解完位于第 153 行）；本分支的 `Network` 图标 import（第 30 行）与上游的 `AdminGlobalSearch` import（第 64 行）各自自动合并。`docs/content/docs/progress/pending-test.mdx` 顶部块——本分支 ledger 顶部 9 节（170 行）在前、上游新节「后台全局页面搜索」（5 行）随后，两侧都留并在接缝补一个空行（脚本 `.local/merge-v183b/resolve-pending-test.mjs`，留档 `.local/merge-v183b/conflicts/pending-test.mdx.conflict-original`）。解完验证：`git grep -nE "^(<<<<<<< |=======\$|>>>>>>> )" -- .` 无输出、`git ls-files -u` 空，两份被改文件仍是纯 CRLF（裸 LF 计数 0）。`CHANGELOG.md` 与 `features.mdx` 自动合并，回读确认 `## v1.8.3` 在第 2 行、上游 `## 后台全局搜索`（`features.mdx:10`）独立成节、没有落进本分支「## 本参图片出站内镜」（`features.mdx:726`）的要点列表里。
+- 交集逐只比对（口径＝「合并前本分支增量」`25bb866c`→`main` 与「合并后本分支增量」`upstream/main`→合并树各取 `^[+-]` 行再比；判据只认「仅本分支侧 0 行」这一向，且在本节写入文档之前取数——脚本 `.local/merge-v183b/compare-increments.mjs`）：`CHANGELOG.md` 28/28、`features.mdx` 13/13、`pending-test.mdx` 432/432 三只缺失 0 行＝本分支增量逐行都在；`admin-shell.tsx` 2 行对 2 行、但各侧剩 1 行不同，正是有意的形态改写（旧行无 `keywords`、新行有）。定点核验：本分支 7 只 web 侧增量文件（`admin-shell.tsx`、`provider-egress-settings-page.tsx`、`runtime-policy-settings-page.tsx`、`router.tsx`、`services/api/auth.ts`、`styles/admin-ui.css`、`admin-ui-regressions.test.ts`）在合并树里全部存在；`router.tsx:285` 的 `path: "settings/provider-egress"` 与 `:43` 的 lazy 声明在；本分支自测 `admin-ui-regressions.test.ts` 对导航的断言用的是 `path: "…"` 子串，补 `keywords` 不触发它；上游新 CSS 的三个选择器（`.admin-global-search`／`-bar`／`-result`）在本仓库其它 CSS 里零命中，层叠不冲突；搜索候选集由 `visibleNavigationGroups(features).flatMap(...)` 派生，所以内镜条目自动进入全局搜索并继续受同一功能开关约束。
+- 门禁（后端跑在合并树快照 `3d52d911` = `commit-tree(合并 index, HEAD, upstream/main)` 的 detach worktree，脚本 `.local/merge-v183b/gate-backend.sh`，退出码在内层各自捕获）：`go build ./...`＝0、`go vet ./internal/...`＝0、`go test -count=1 -timeout 30m ./internal/...`＝1，**38 包 ok**，`internal/app` 567.478s，唯一失败仍是 `internal/prompts > TestLoadAgentPoliciesUsesSingleVersionedContract` 的 12080 字节 CRLF 假红；本轮把三条定性证据重做一遍——策略文本 blob `53930bbb` 在 `HEAD`／`upstream/main`／快照三树逐字节相同、本批上游 `backend/` 命中 0 只、整树拷进容器 `/tmp` 用 `tr -d '\r'` 转 LF（12131→12037 字节、CR 计数 94→0，回读字节数已核）后单跑该用例 PASS（0.859s，日志 `.local/merge-v183b/logs/backend-gate.log`）。
+- 前端门禁（先重建镜像再串行跑两轮，脚本 `.local/merge-v183b/gate-web.sh`；不与后端容器并行＝手册坑 24）：`docker build --target web-build -t yingce-webbuild:merge .` 出镜像 `d062990ebb32`（`IMG_BUILD_EXIT=0`），镜像内 `admin-shell.tsx` 的 md5 `82ef9db1246e7968babc801f3b025120` 与工作区逐字节相同，证明测的是合并树。合并后：`tsc --noEmit`＝0、`bun test test/` **3219 pass／14 fail／0 error**（459 文件，173.98s）。合并前基线 `d463f46d`（同镜像叠 `web/src`＋`web/test`＋`backend`，`preload-locale.ts` 两侧都在，本轮不需要删 bunfig）：`tsc` 0、**3214 pass／14 fail／0 error**（457 文件，139.80s）。失败名单**双向差集为空**（`DIFF_EXIT=0`），14 条与上一轮名单逐条相同，仍是 9 条 `changed-file formatting gate`＋2 条 `commit image reuse`＋3 条 `digest promotion` 那族容器缺 git/prettier/CI 的生产环境红。457→459 文件、3214→3219 pass 的增量＝上游本批新增的 5 条用例，逐条在合并日志里为 `(pass)`、在基线日志里 0 命中。
+- 待验（未做，留复选框）：
+  - [ ] 浏览器验收后台全局搜索（1888）：搜「内镜」「出站内镜」「交付形态」应命中「出站内镜」并正确跳转；窄屏与明暗主题下搜索条不挤压侧栏与页面内容；关闭前台模型开关后搜索结果与侧栏条目仍一致。上游文档自己就写了「尚未进行登录后的浏览器验收」。
+  - [ ] 部署：本批 `VERSION` 抬到 v1.8.3，上线判据回到版本串——`/api/health/ready` 应回 `build.version=v1.8.3`、`schema.current == expected == 9001`、`ready=true`；结构账本本批零新增，预演 `migrate-schema up`/`verify` 仍应 9001/9001 且 `schema_migrations` 不增行（这是与上一批最实的差别，别按「有新迁移」去预演）。
+  - [ ] 分镜脚本节点（#990）真实画布核对：生成中与失败态下标题不被外层状态徽章遮挡，非分镜节点的状态徽章行为不变；`canvas-node-generation-state` 那条新用例只覆盖了静态渲染。
 ## 上游合并 v1.8.2 后未发版批次（11 提交）
 
 - 合并范围：上游 11 提交 `cd2512eb` → `25bb866c`。上游 `VERSION` 仍是 v1.8.2、`CHANGELOG.md` 未加新段，但 `migrations.go` 加了版本 92，所以手册里「未发版批次」的三条判据本轮只有前两条成立——按「未发版的一批」收进本仓库分支补充、不抬版本号，同时在账本上照收 92。功能：短剧制作完善（#988：段级可从素材库或上传附加参考图、为造型保存生图提示词、手动指定/关闭参考音色、画布采用到角色服装妆造）、姿势库体系管理默认折叠并限高（#987）、画布可选字段缺省与 `null` 差异引发的同步死循环修复并兼容裸资源 ID（#984）、Agent 批量生成审批内可切换模型与规格、Agent 长表单固定操作区与滚动位置提示、Agent 入场动画不再覆盖拖拽位置、空白画布输入框去灰影与底部控件避让、计费扣退串行化与自动退款游标扫描、作品圣经 JSON 恢复。90 文件、新增 15 只、删除 0 只。
@@ -175,6 +188,12 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - [x] 部署后核对 `/api/health/ready`：`build.version=v1.7.3.4`、`schema.current == expected == 9001`、`ready=true`；`schema_migrations` 的 78 `applied_at=2026-11-02 15:07:42.147190634Z`，9001 的 `applied_at` 保持 `2026-10-12 01:14:32.864590311Z`。
 - [x] 在停库后的新备份上预演 `migrate-schema up` / `verify`：两次均返回 `{"current":9001,"expected":9001,"ready":true}`；上线后快照与部署前逐表行数一致（`tasks` 1572、`resources` 252、`billing_orders` 1363、`credit_ledger_entries` 2681、`provider_egress_objects` 6，短剧六表均为 0），任务状态计数也不变。
 - [x] 部署后抽查：后端二进制含 `v1.7.3.4` 且不含 `v1.7.3.3`；启动 5 分钟日志 `level=ERROR|panic|invalid Pi tool` 计数为 0；`GET /api/admin/settings/provider-egress` 返回 401；1888 实际下发的 `canvas-cloud-agent-panel-e1vtwMdl.js` 命中新增文案「回到底部」。真实业务出图回归留待日常使用。
+
+## 后台全局页面搜索
+
+- 已实现：后台公共顶部增加全局搜索，可按页面名称、菜单分类、路由和功能关键词查询，点击结果跳转；支持方向键选择、回车跳转、清空和无结果提示。搜索复用菜单目录及功能开关，不查询用户、订单或密钥等业务数据。
+- 本地验证：搜索匹配与路由目录测试、真实组件的点击/键盘跳转与无结果交互测试通过，使用模拟 DOM；尚未进行登录后的浏览器验收。
+- [ ] 检查后台各页、窄屏和明暗主题的搜索布局；关闭前台模型后搜索结果与导航保持一致，点击结果正确跳转。
 
 ## 空白画布输入框灰影
 
