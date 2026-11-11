@@ -122,6 +122,7 @@ import { AgentContextChip } from "./canvas-cloud-agent-composer";
 import { CanvasAgentSkillLibraryModal } from "./canvas-agent-skill-library-modal";
 import { useSkillCuration, curationQuery } from "@/components/skills/skill-curation-browser";
 import { CanvasCloudAgentSettings, agentPermissionLabel, type AgentContextKey } from "./canvas-cloud-agent-settings";
+import { AgentConnectorsBar, type AgentMCPDestination } from "./canvas-cloud-agent-connectors";
 import { AgentOutboxTray, type AgentOutboxPrimaryAction } from "./canvas-cloud-agent-outbox";
 import { useAgentPanelLayout } from "./use-agent-panel-layout";
 import { useAgentPanelDock } from "./use-agent-panel-dock";
@@ -192,6 +193,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const reducedMotion = useReducedMotion();
     const [view, setView] = useState<AgentPanelView>("chat");
+    const [settingsSection, setSettingsSection] = useState<"mcp" | undefined>();
+    const [settingsMcpTab, setSettingsMcpTab] = useState<AgentMCPDestination>("connections");
     const [run, setRun] = useState<AgentRun | null>(null);
     const [contextUsage, setContextUsage] = useState<AgentContextUsage>(() => emptyAgentContextUsage(""));
     const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "reconnecting" | "disconnected">("connecting");
@@ -288,6 +291,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const planTerminal = useMemo(() => latestAgentPlanTerminal(messages), [messages]);
     const planVisible = agentPlanVisible(planItems);
     const mediaBatch = useMemo(() => latestAgentMediaBatch(messages), [messages]);
+    const [dismissedMediaBatchId, setDismissedMediaBatchId] = useState<string | null>(null);
     const pendingQuestion = useMemo(() => pendingAgentQuestion(messages), [messages]);
     const [scenePresets, setScenePresets] = useState<SkillPreset[]>([]);
     const [presetApplyingId, setPresetApplyingId] = useState("");
@@ -580,19 +584,21 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         // 服务端 queued 是等待执行资源，叫「等待启动」，与输入框的排队消息区分开。
         status === "waiting_approval"
             ? "等待审批"
-            : status === "queued"
-              ? "等待启动"
-              : status === "running"
-                ? "运行中"
-                : status === "completed"
-                  ? "已完成"
-                  : status === "failed"
-                    ? "异常"
-                    : status === "cancelled"
-                      ? "已停止"
-                      : status === "rejected"
-                        ? "已拒绝"
-                        : "待命";
+            : pendingQuestion
+              ? "等待回答"
+              : status === "queued"
+                ? "等待启动"
+                : status === "running"
+                  ? "运行中"
+                  : status === "completed"
+                    ? "已完成"
+                    : status === "failed"
+                      ? "异常"
+                      : status === "cancelled"
+                        ? "已停止"
+                        : status === "rejected"
+                          ? "已拒绝"
+                          : "待命";
     // 状态色走语义 token（皮肤和明暗主题自动适配）；停止、拒绝、待命用次要文字色。
     const statusColor = status === "failed" ? "var(--status-error)" : status === "waiting_approval" ? "var(--status-warning)" : status === "running" || status === "queued" ? "var(--status-success)" : theme.node.muted;
 
@@ -2461,6 +2467,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                             {view === "settings" ? (
                                 <motion.div key="settings" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
                                     <CanvasCloudAgentSettings
+                                        initialSection={settingsSection}
+                                        initialMcpTab={settingsMcpTab}
                                         theme={theme}
                                         config={config}
                                         selectedModel={selectedModel}
@@ -2527,7 +2535,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         statusLabel={statusLabel}
                                         statusColor={statusColor}
                                         live={running}
-                                        nodeCount={canvasId ? nodeCount : null}
+                                        conversationTitle={conversations.find((conversation) => conversation.id === activeConversationId)?.title}
                                         onNew={newConversation}
                                         onHistory={() => setView("history")}
                                         exporting={exporting}
@@ -2550,7 +2558,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                                 .catch((cause) => setMessages((current) => appendAgentError(current, `export-${Date.now()}`, cause, "导出失败")))
                                                 .finally(() => setExporting(false));
                                         }}
-                                        onSettings={() => setView("settings")}
+                                        onSettings={() => {
+                                            setSettingsSection(undefined);
+                                            setView("settings");
+                                        }}
                                         onResetLayout={panelLayout.reset}
                                         docked={dock.active}
                                         onToggleDock={dock.available ? () => setDocked(!dock.active) : undefined}
@@ -2580,20 +2591,19 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         key={activeConversationId}
                                         theme={theme}
                                         messages={messages}
+                                        nodeCount={canvasId ? nodeCount : null}
+                                        onChooseSkill={() => setSkillsOpen(true)}
+                                        onDraftPrompt={historyHydrated && pendingHydrated && !cloudOpeningId && (!canvasId || cloudHistoryReady) ? (draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft)) : undefined}
                                         onFocusNode={onFocusNode}
                                         onUndo={busy || running || otherAgentRunning ? undefined : (target) => void undoCanvasStep(target)}
                                         undoStates={undoStates}
                                         references={conversationReferences}
                                         busy={busy || running}
+                                        activity={stopping ? "stopping" : busy ? "submitting" : status === "queued" ? "queued" : "running"}
                                         approval={approval}
                                         approvalTargetGenerating={approvalTargetGenerating}
-                                        nodeCount={canvasId ? nodeCount : null}
-                                        installedSkillCount={skillCatalogReady ? installedSkills.length : null}
                                         approvalSubmitting={approvalSubmitting}
                                         approvalBlockedReason={approvalBlockedReason}
-                                        onChooseSkill={() => setSkillsOpen(true)}
-                                        onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
-                                        onDraftPrompt={(draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft))}
                                         onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
                                         onApprove={(settings) => void submitApproval("approve", settings)}
                                         onReject={() => void submitApproval("reject")}
@@ -2643,16 +2653,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             onToggle={() => setPlanMinimized((value) => !value)}
                                         />
                                     ) : null}
-                                    {mediaBatch && mediaBatch.phase !== "approval" ? <AgentMediaBatchBar batch={mediaBatch} theme={theme} onFocusNode={onFocusNode} /> : null}
-                                    {historyHydrated && !messages.some((message) => message.role === "user" || message.role === "assistant") && !run ? (
-                                        <AgentSceneCapsules
-                                            buckets={sceneBuckets}
-                                            installedIds={installedSkillIds}
-                                            theme={theme}
-                                            disabled={otherAgentRunning || busy || running || !pendingHydrated || Boolean(presetApplyingId)}
-                                            onPick={(preset) => void applyScenePreset(preset)}
-                                            onPickSkill={(skill) => void applySingleSkill(skill)}
-                                        />
+                                    {mediaBatch && mediaBatch.batchId !== dismissedMediaBatchId && mediaBatch.phase !== "approval" ? (
+                                        <AgentMediaBatchBar batch={mediaBatch} theme={theme} onFocusNode={onFocusNode} onDismiss={() => setDismissedMediaBatchId(mediaBatch.batchId)} />
                                     ) : null}
                                     {pendingQuestion ? (
                                         <AgentQuestionBar
@@ -2689,6 +2691,15 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         onSubmit={handleComposerSubmit}
                                         onEscape={handleComposerEscape}
                                         tray={outboxTray}
+                                        footer={
+                                            <AgentConnectorsBar
+                                                onOpenMCP={(destination) => {
+                                                    setSettingsSection("mcp");
+                                                    setSettingsMcpTab(destination);
+                                                    setView("settings");
+                                                }}
+                                            />
+                                        }
                                         attachments={composerAttachments}
                                         onAddFiles={addComposerFiles}
                                         onRemoveAttachment={removeDraftAttachment}
@@ -2745,6 +2756,20 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 }}
                 open={skillsOpen}
                 theme={theme}
+                presets={
+                    skillsOpen && sceneBuckets.some((bucket) => bucket.presets.length || bucket.skills.length) ? (
+                        <div className="agent-skill-presets" style={{ "--agent-ink": theme.node.text, "--agent-caption": theme.node.muted, "--agent-focus-ring": theme.accent.primary } as CSSProperties}>
+                            <AgentSceneCapsules
+                                buckets={sceneBuckets}
+                                installedIds={installedSkillIds}
+                                theme={theme}
+                                disabled={otherAgentRunning || busy || running || !historyHydrated || !pendingHydrated || Boolean(presetApplyingId)}
+                                onPick={(preset) => void applyScenePreset(preset)}
+                                onPickSkill={(skill) => void applySingleSkill(skill)}
+                            />
+                        </div>
+                    ) : null
+                }
                 installedSkills={installedSkills}
                 marketSkills={marketSkills}
                 selectedSkillIds={selectedSkillIds}

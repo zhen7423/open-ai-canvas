@@ -66,6 +66,25 @@ export type RuntimeLimits = {
     recycleBinRetentionDays?: number;
 };
 
+export type ApiLogGenerationReference = {
+    id: string;
+    kind: "image" | "video" | "audio";
+    label: string;
+    name: string;
+    role?: string;
+    available: boolean;
+    unavailableReason?: string;
+    mediaUrl?: string;
+};
+
+export type ApiLogGenerationContent = {
+    prompt: string;
+    references: ApiLogGenerationReference[];
+    source: "snapshot" | "task" | "request";
+    incomplete: boolean;
+    note?: string;
+};
+
 export type ApiCallLog = {
     id: string;
     userId: string;
@@ -119,9 +138,14 @@ export type ApiCallLog = {
     requestContentType?: string;
     requestBody?: string;
     responseBody?: string;
+    generationContent?: ApiLogGenerationContent;
     startedAt?: string;
     createdAt: string;
 };
+
+export function adminApiLogReferenceMediaURL(logId: string, referenceId: string) {
+    return `${String(apiBaseURL).replace(/\/+$/, "")}/admin/api-logs/${encodeURIComponent(logId)}/references/${encodeURIComponent(referenceId)}/media`;
+}
 
 export type AdminProviderTaskQueryResult = {
     task: GenerationTask;
@@ -636,7 +660,7 @@ export function importAdminChannels(payload: SystemChannelExport) {
     return http.post<SystemChannelImportResult>("/admin/channels/import", payload);
 }
 
-export function updateAdminChannel(id: string, input: Partial<ModelChannel> & { useGlobalConcurrency?: boolean }) {
+export function updateAdminChannel(id: string, input: Partial<ModelChannel> & { useGlobalConcurrency?: boolean; expectedUpdatedAt?: string }) {
     return http.patch<{ channel: ModelChannel }>(`/admin/channels/${encodeURIComponent(id)}`, input);
 }
 
