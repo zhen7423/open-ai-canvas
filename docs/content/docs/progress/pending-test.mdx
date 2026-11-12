@@ -5,6 +5,29 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 合并上游 v1.8.5（2026-11-12，同日第二轮追合，未部署、未推送）
+
+- 开工取证：`git status --porcelain=v1` 空、无 `MERGE_HEAD`、在 `main`；`main` = `5e2df04e`（批次一合并提交）、`origin/main` = `a3f6d728`、本地领先 fork 58；fetch 后 `upstream/main` = `17aaecbb`。批次一收尾时回读发现上游在合并进行中又发了 v1.8.5，按既有惯例本可留到下一轮，他裁决「先追合 v1.8.5 再一起部署」，故本轮在同一天补第二笔合并。
+- 批次形态三条判据：`VERSION` v1.8.4.1 → v1.8.5（`5604c00d`）、`CHANGELOG.md` 新增 `## v1.8.5` 一段、`migrations.go` 新增号 **0** ⇒ 这是「发版但不加迁移号」的形态，与 v1.8.0 那批同型；结构账本零新增本身就是判据，预演与上线核对仍要照发版批次做满。发版段写「数据库目标版本由 Schema 98 升至 Schema 100」指的是批次一已并入的 99／100，本轮不新增号。
+- 变更面：47 只文件＝13 新增／34 修改、零删除（1854 增／386 删）。按域 backend/internal 12、web/src 13／web/test 7／web/build 2／`web/vite.config.ts`／`web/index.html`、docs 3、plugin-packages 4（新增 `plugin-packages/uberllm-chat/*` 与打包件）、顶层散件 4（`.github/workflows/quality.yml`、`CHANGELOG.md`、`Dockerfile`、`VERSION`）。
+- 部署侧 churn 一条实的：**`Dockerfile` web-build 阶段新增 `COPY backend/internal/app/appearance_theme_packs.json`**，而该 json 正是本批上游新增文件——不重建镜像就是构建失败或产物缺数据（v1.7.1 那次 `apk add ffmpeg` 同族提醒）。本轮重建 `yingce-webbuild:merge` 得 `ce595fe2f631`，并实测镜像内 4 只关键文件与合并树 md5 逐字节相同：`web/build/resilient-preload.ts`、`web/src/lib/module-preload.ts`、`web/test/module-preload.test.ts`、`backend/internal/app/appearance_theme_packs.json`（`8902b93596ac7d636fb8f2bfd840d42e`）。`quality.yml` 固定 Ubuntu 24.04 属上游 CI，本机门禁不经它；三份 compose 与 `.env.example` 本批零改动（LAN 那 5 个 `CANVAS_OIDC_*` 仍未透传）。
+- 冲突面：交集 4 只、**真冲突只 1 处** `docs/content/docs/progress/pending-test.mdx` 顶部块——本分支 ledger 顶部 257 行在前、上游「## PR 批量合并后的边界回归」8 行随后，两侧都留＋接缝补一个空行（脚本 `.local/merge-v184/resolve-both.mjs --blank-seam`，冲突原文件留档 `.local/merge-v185/conflicts/pending-test.mdx.orig`）。`CHANGELOG.md`、`code-map.mdx`、`backend/internal/app/provider_test.go` 自动合并。解完全仓冲突标记 `git grep` 无输出、`git ls-files -u` 空。
+- 交集逐只比对（写本节之前取树；BASE = `5f424643`、PRE = `5e2df04e`）：`provider_test.go` 69/69、`CHANGELOG.md` 31/31、`code-map.mdx` 1/1、`pending-test.mdx` 519/519，双向缺失 0 行＝本分支增量一字未变。**本轮踩到并修掉一条工具口径**：批次一的比对脚本把 BASE 写死成 `3ce013ec`，直接拿来跑同日第二轮会把批次一已并入的上游内容算作「本分支增量」，实测虚报 2399 行丢失；同日第二轮必须重取 BASE／PRE／基线 SHA，脚本已参数化。
+- 内镜口径三点：① 上游本批对 `provider*.go`／`media_transport.go`／`storage_adapters.go`／`admin_setting_routes.go`／`provider_media_hydration.go`／`text_model_image_compression.go`／`runtime_policy*` **零命中**。② 新插件 `uberllm-chat` 的 `manifest.json` 里 `requiresPublicMediaUrls` 两处都是 `false` ⇒ 走缺省内联优先、不触发内镜补位，「全部镜像」仍可由管理员手选。③ MCP 连接与外部工具执行是新增的另一条出站路径，不写 `provider_egress_objects` 台账，也不受内镜的交付形态开关约束——**这条口径缺口只记录、未改代码**，要不要纳入同一台账归他裁决。
+- `internal/prompts` 那条跟了几轮的 CRLF 假红（现值）：本批上游对 `backend/internal/prompts` 零改动，blob 在 `5e2df04e`／`upstream/main`／合并索引三处逐字节相同（md5 前缀 `607f425843db`），工作树 12,047 B／96 个 CR。按 `parsePolicyDocument` 口径正文仍 LF 11,906／CRLF 11,996、阈值 12,000 ⇒ **余量仍是 4 字节；这是「没被碰」不是「已修好」**，手册坑 37 的口径继续生效。
+- 后端门禁（容器 `yingce-gobuild:dev`，挂在合并树快照 `ae53e054` = `commit-tree(合并 index, HEAD, upstream/main)`）：`go build ./...` 退出码 0、`go vet ./internal/...` 0、`go test -count=1 -timeout 30m ./internal/...` **43 包全 ok、0 FAIL**（`internal/app` 698.901s，比批次一的 602.869s 慢，属本机负载）。本轮无新模块引入，未出现联网下载。
+- 前端门禁（`tsc --noEmit` 退出码 0）：合并后 `bun test test/` **3360 pass／15 fail／0 error**（484 文件，303.39s），基线 `5e2df04e` **3354 pass／15 fail／0 error**（482 文件，341.83s，两侧都显式挂 backend）。**父进程口径的失败名单双向差集为空**——各 15 条都是 9 `changed-file formatting gate` ＋ 2 `commit image reuse` ＋ 3 `digest promotion` ＋ 1 条 harness 链。用例增减按标题多重集拆：净 +6 条＝新文件 `module-preload.test.ts`(3) ＋ `boot-recovery.test.ts`(2) ＋ `gemini-image.test.ts`(+1)；`model-picker-style-source.test.ts` 一增一减属用例改名；`channel-model-templates.interaction.test.ts` 名下 ±2 是子进程 harness 级联噪声，父进程计数器不含它们（坑 39）。
+- 贴线超时用例第二轮复现，且**基线树也复现**：两次跑里 harness 内「完整模型编辑器：先应用或撤销模板再发起协议建议也保留能力」都超时（本轮 5,005.69ms），级联受害名单在两次跑里各自换人（合并侧「未操作保存保留参考视频计价」「已有模型改协议再改回原值」「复制预填…」，基线侧「能力模板应用和撤销均不记录明确协议选择」「迟到的协议建议…」）⇒ 定性推进为「已随批次一进入本分支的稳定贴线超时，非本批引入、非合并回归」，仍按坑 38 记（放宽 `--timeout 30000` 即全绿），不按坑 24 当抖动处理。
+- 部署计划与待验项：
+  - [ ] 两批一次上（v1.8.4.1＋v1.8.5）。本批 `VERSION` 抬到 v1.8.5 ⇒ §8 的版本串判据可用（`build.version` 应翻到 v1.8.5、旧串 0 次），但仍要按带边界口径核（坑 25）。
+  - [ ] 预演三条硬阻断（在停库后新生成的备份副本上跑，逐条先数前置条件）：96 `canvas_unified_text_nodes` 逐画布重写 `canvas_projects`／`canvas_snapshots`／`cloud_agent_canvas_mutations`，撤销哈希不匹配会整笔回滚；95 `ark_private_asset_binding_identity` 建 `(resource_id, project_name)` 复合唯一索引前先数重复组，`duplicates > 0` 直接报错不删数据；100 `agent_mcp_connections` 会插 2 行内置 MCP 模板（`builtin-github`／`builtin-feishu`），数业务行时要认出来。
+  - [ ] 上线后读库带 `-wal` 三件（坑 31），账本应零新增号、9001 与 89～92 原时间不动；业务与账单逐项相等，`email_logs`／`canvas_mutation_receipts` 按各自保留期例外核。
+  - [ ] 部署成功后推 origin（`a3f6d728..本轮合并提交`，含两批上游 68 提交＋2 个合并提交＋登记），推前重查待推树对门禁快照的差集是否只含文档。
+  - [ ] 上游新增门禁 `backend:pi-runtime` 仍只记录、未装依赖未跑（Pi 依赖 0.87.1 → 1.5.2 跨大版本，装不装归他裁决）。
+  - [ ] v1.8.5 新功能的手工验收：跨会话记忆与 `memory_search`、MCP 连接与工具逐次审批、飞书反馈日报（首版不支持 `encrypt` 加密事件）、访问统计看板与 CSV、首屏预加载重试与恢复入口、UberLLM Chat 渠道接入、龙影水墨／云鹤仙观默认主题、Gemini 独立分辨率与思考等级。
+  - [ ] 批次一遗留的六项浏览器验收、#1000 原生编码 × 本分支压缩副本的组合回归、OIDC 真实提供方验收与 LAN 透传裁决，均未做。
+
+
 ## 合并上游 v1.8.4 与 v1.8.4.1（2026-11-11，未部署、未推送）
 
 - 开工取证：`git status --porcelain=v1` 空、无 `MERGE_HEAD`、在 `main`；`main` = `origin/main` = `a3f6d728`，本地 vs fork 0/0；fetch 后 `upstream/main` = `5f424643`，`main..upstream/main` = **57 提交**（上一轮取证基准是 `3ce013ec`，本轮从它往后数）。
@@ -263,6 +286,15 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - [x] 在停库后的新备份上预演 `migrate-schema up` / `verify`：两次均返回 `{"current":9001,"expected":9001,"ready":true}`；上线后快照与部署前逐表行数一致（`tasks` 1572、`resources` 252、`billing_orders` 1363、`credit_ledger_entries` 2681、`provider_egress_objects` 6，短剧六表均为 0），任务状态计数也不变。
 - [x] 部署后抽查：后端二进制含 `v1.7.3.4` 且不含 `v1.7.3.3`；启动 5 分钟日志 `level=ERROR|panic|invalid Pi tool` 计数为 0；`GET /api/admin/settings/provider-egress` 返回 401；1888 实际下发的 `canvas-cloud-agent-panel-e1vtwMdl.js` 命中新增文案「回到底部」。真实业务出图回归留待日常使用。
 
+## PR 批量合并后的边界回归
+
+- 已修复：模块预热失败沿用 Vite 可取消的错误事件，保留现有一次自动恢复与路由错误处理；首屏超时提示的重试按钮在明暗主题均使用可辨识的文字与透明背景。
+- 已修复：登录后的画布工程列表仅使用当前账号的服务端查询结果，不在加载或失败时用本地缓存冒充筛选结果；占位数据仅在同账号查询间复用。
+- 已修复：Gemini 前后端均优先使用独立分辨率，`auto` 时沿用质量映射，思考等级独立传递；未指定时不擅自设置分辨率或思考默认值。
+- [ ] 在真实部署中模拟静态资源 404、503、慢速网络，验证有限重试、恢复入口和延迟挂载后的提示清理；检查明暗主题下按钮可读。
+- [ ] 在画布列表切换账号、退出登录及切换筛选，验证不会短暂显示上一个账号或未筛选的本地项目。
+- [ ] 使用实际 Gemini 渠道核对独立分辨率、质量回退与模型支持的思考档位，确认真实请求与计费规格一致。
+
 ## 后台布局精简
 
 - 已实现：暂时隐藏后台全局搜索栏和侧栏品牌、版本区，移除两块区域的布局占位，保留组件以便后续恢复。
@@ -385,6 +417,7 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - 恢复验证：原欢迎组件与 Git 中原版逐字一致，光球、标题、入口和脚注的 CSS 块与原版一致；真实面板回归覆盖三个入口、技能库打开、空画布禁用、草稿追加及发送后收起。`bun test --preload ./src/i18n/index.ts test/agent-sidebar-presentation.test.tsx test/agent-panel-presentation.test.tsx test/cloud-agent-panel-sync.test.ts` 8 项通过（包含独立 DOM 子进程），`bun run typecheck` 通过。尚未做真实浏览器视觉验收。
 - 相邻验证：工具条、背景与布局专项 56 项通过；既有 Agent 呈现/工具/引用/同步专项通过，侧栏 DOM 覆盖历史/菜单/技能入口、草稿保留、停止/排队的旧流状态、审批费用和按钮、节点定位/撤销/错误重试/提问。布局测试使用受控元素尺寸，不等同于真实浏览器视觉验收。
 - [ ] 在真实画布检查 390/768/1440/2048px 宽度、明暗主题与侧栏调宽；验证底部控件无重叠、横向滚动、Tooltip、Tab/方向键/Escape，以及浅色背景实际渲染为纯白。
+- [ ] 在真实画布核对 Agent 推理档位。刷新后恢复同账号同模型的选择，切到其他模型时读取其独立选择，禁用已选档位后显示「默认」并使用模型默认档。
 - [ ] 对照原欢迎页截图验收光球、居中排版、三个入口及底部提示；检查明暗主题、窄侧栏、空画布禁用、历史恢复、技能库打开和草稿追加。检查旧浮窗偏好、对话收起/打开、停止/审批时的唯一执行状态。参考项目保持只读。
 
 ## Agent 刷新加载形象
@@ -539,9 +572,9 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 ## 可切换主题包
 
 - 已实现龙影水墨与云鹤仙观：字体、插图、助手圆球、空状态、积分图标、404、画布预设和局部文案随后台皮肤切换。无对应主题包时保留原有界面。
-- 两套皮肤通过本地导出的安装脚本追加到后台皮肤库，安装本身不切换当前皮肤，不修改站点品牌和登录影片。
+- 两套皮肤已加入后端默认皮肤库。读取旧配置时按剩余容量补入缺失的皮肤，保留原有配置和启用项。
 - [ ] 在部署环境逐页确认明暗主题、手机布局、字体资源和三套皮肤之间的切换还原。
-- [ ] 在真实管理员会话验证追加皮肤、刷新保留、已有同 ID 自定义皮肤的冲突处理。
+- [ ] 在部署环境用新站和已配置外观的升级站确认后台可直接选择两套皮肤。检查保存后刷新、同 ID 自定义皮肤保留，以及皮肤库接近上限的行为。
 - [ ] 检查不同站点品牌名、已配置影片/Live2D、真实分享画布及旧画布配色。
 
 ## 登录注册一体与邮箱开关
