@@ -5,6 +5,28 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 部署 v1.8.4.1＋v1.8.5 两批一次上线（2026-11-12，LAN 栈）
+
+- 窗口（UTC，本地加 8 小时）：`docker compose stop backend` 发出 03:20:42 → 后端退出约 03:30:43（10 分钟 `stop_grace_period` 走完，容器 `Exited (1)`）→ 新备份 03:30:58 → 副本预演 03:32:55～03:37:29 → 真卷迁移 03:40:02～03:40:50 → `up -d` 03:41:16～03:41:30 → 后端 31 秒 `healthy`。
+- **停库时机是一条要认的缺陷**：发出停止时 `activeWorkerTasks=3`，日志最后一条画布写入是 03:20:40（`PATCH /api/canvas-projects/bufBDbSEMuQdrp-CIaUXf/operations`，此前每 4 秒一条连续数分钟），停止命令只晚 2 秒——用户当时正在编辑。手册 §8 的前置条件是读到 0 再停，本轮是被「直接部署」的指令推着走的，如实登记。后果核过并可复原：那 3 个任务（`a21a1aae…` 00:38 创建、`952bc059…`／`c230ec16…` 00:54～00:55 创建）在新版重启后被 worker 重新领走，`updated_at` 从停库前的 03:30:2x／03:30:36 推进到 03:43:2x，`status` 仍 running，未落进 stale；`canvas_mutation_receipts` 的 `MAX` 停在 03:20:39（停库前最后一笔），没有重复写入。
+- 备份：优雅停后端后卷内 `-wal`/`-shm` 计数 **0**，主库 2,343,755,776 B；新备份 `pre-merge-v185-20261112T033058Z/open_ai_canvas.db`（同尺寸）。**卷内 `pre-*` 由 2 份变 3 份，本轮一份都没删**（另两份是 `pre-merge-postv183-20261110T000349Z`、`pre-merge-v183-release-20261109T034206Z`）。
+- 预演（在这份【刚生成的】新备份的宿主副本上，`migrate-schema` 带 `-u root`）：`up` 退出码 0、末行 `{"current":9001,"expected":9001,"ready":true}`，`verify` 同样 0／9001/9001。三条硬阻断前置条件逐条数过：**96** 面前是 `cloud_agent_canvas_mutations` 1017 行、其中 1017 行都带 `before_snapshot_hash`，`canvas_snapshots` 0 行、`creation_runs` 0 行——分批扫完 **没有触发「Agent 撤销快照原始哈希不匹配」**，即 v1.8.4.1 放宽后的口径覆盖本机全部历史快照；**95** 面前是 `ark_private_asset_bindings` 0 行、重复组 0，建复合唯一索引空转；**100** 建三张表并插入 2 行内置 MCP 模板（`builtin-github`／`builtin-feishu`）。副本迁移前后 18 项业务读数逐项相同，账本从 92 行到 100 行（93/94/95 @03:32:55，96～100 @03:37:29），`9001` 时间未动。
+- **一条耗时教训**：预演在宿主 bind-mount 上跑 4 分 34 秒，真卷只用了 48 秒（03:40:02→03:40:50）。别拿预演耗时估上线窗口。因为 96 可能长，本轮改了 §8 的顺序：**先停库 → 备份 → 预演 → 再对真卷单独跑 `migrate-schema up`/`verify` → 最后 `up -d`**，这样新后端启动时 `current==expected`，31 秒即 healthy，不会在启动里夹 5 分钟迁移、也不会撞 healthcheck 的 10s start_period × 3 次重试。
+- 真卷迁移与上线：迁移容器 `UP_EXIT=0`、`VERIFY_EXIT=0`，结束后卷内 `wal`/`shm` 计数 0，主库增长 20,480 B（新表落在既有空闲页）。`up -d` 后 `build.version=v1.8.5`、`schema.current==expected==9001`、`ready=true`、`checks` 三项全 true、`draining=false`；两容器 `Up (healthy)`（web 因镜像换 tag 被重建，一并重启）；启动至今 `level=ERROR|panic|invalid Pi tool` 命中 **0**，web 容器日志 `404` 与 nginx 错误命中 **0**；`GET /` 回 200、入口脚本 `assets/index-B0zdaplw.js`。
+- 路由与功能探针：`GET /api/admin/settings/provider-egress` → **401**（内镜路由仍注册，非旧镜像的 404）；`/api/admin/mcp/connections` → 401、`/api/site-traffic/today` → 401（v1.8.5 两条新后台接口已注册）；`/api/auth/oidc/start` → 403、`/api/auth/oidc/callback` → 400（新功能在场）；`/api/auth/settings` 回 **`oidcEnabled:false`** —— 再次印证 LAN 栈没透传那 5 个 `CANVAS_OIDC_*`，登录页不出现 OIDC 入口（手册坑 33 现值不变，仍未改、等他裁决）。
+- 上线实锤（本批 `VERSION` 抬到 v1.8.5，版本串判据可用，按坑 25 的带边界核法）：从运行容器导出 `yingce-backend`，**92,928,536 B**（上一批 90,460,344 B，＋2,468,192），`v1.8.5` 出现 **1 次且紧跟 NUL**、`v1.8.3` **0 次**、`v1.8.4` 3 次但 0 次紧跟 NUL（依赖版本串前缀）；本批独有料也在二进制里：`CANVAS_OIDC_ISSUER` 1 次、OIDC 报错文案「OIDC 提供方必须使用 HTTPS」1 次、内镜路由字面量 9 次（本分支增量仍在产物里）。前端按镜像内哈希名取产物与 1888 回读**逐字节比 md5**：`i18n-B08jJkOS.js` 1,076,263 B／`7270d19c…` 两侧相同、含「使用 OIDC 登录」；`admin-shell-3rv0t5R-.js` 22,987 B／`e082b1f3…` 两侧相同、同时含「出站内镜」与「后台页面搜索」。镜像内 assets 共 1673 只（js 1571／css 55），与宿主拉下来的 1673 对齐后再比同类。
+- 数据核对（上线后读库带 `-wal` 三件，坑 31；本次快照 wal 2,570,912 B）：账本 **92 → 100**，新增号 93/94/95/96/97/98/99/100，**`9001` 仍 `2026-10-12 01:14:32.864590311`、89～92 原时间未动**；业务与账单逐项与停库前相同（`tasks` 3231、`resources` 365、`assets` 337、`billing_orders` 2798（running 6／uncertain 142）、`payment_orders` 0、`credit_accounts` 3、`credit_ledger_entries` 5473、`available_microcredits` 11100197504458、`reserved_microcredits` 39040000、`provider_egress_objects` 20、`email_logs` 0、`canvas_projects` 5、`cloud_agent_canvas_mutations` 1017（1017 行带 before 哈希）、`ark_private_asset_bindings` 0、`drama_casts.image_prompt` 列在）；新表落位 `ecommerce_rounds` 0、`site_traffic_events` 1、`mcp_connections` 0、`mcp_tool_executions` 0、`mcp_server_templates` 2（＝100 插的两行内置模板，认出来）。**唯一行差是 receipts 7010 → 7007**，`MIN` 从 11-05 03:20:40 抬到 03:46:34、`MAX` 不变＝§8 的 7 天保留期清理例外行，不是丢数据。`site_traffic_events` 那 1 行是上线后新出现的匿名访问记录，成因还没归因（可能是重启后的首页加载，也可能含我自己的探针请求），登记为待查而不是结论。
+- 启动巡检：`billing review audit stale_orders=145 reserved=0 running=3 uncertain=142 oldest=2026-10-19T09:10:18Z`，其中 `uncertain=142` 与停库前在新备份上数到的同一数（属积累，非本轮引入）；`stale_orders` 从上一轮的 134 涨到 145，跨度是这两天的正常使用量。
+- 仍未做（留复选框）：
+  - [ ] `site_traffic_events` 那 1 行的成因归因：确认是真实首页访问还是我自己的探针；若是探针需在文档里注明「采集面会被运维自检命中」。
+  - [ ] 那 3 个重新领走的任务跑到终态后核一次结果与账单（`a21a1aae…`／`952bc059…`／`c230ec16…`），确认没有重复扣费或缺产物。
+  - [ ] v1.8.4.1＋v1.8.5 的界面手工验收仍未逐项做：MCP 连接与工具逐次审批、访问统计看板与 CSV、飞书反馈日报（首版不支持 `encrypt` 事件）、跨会话记忆与 `memory_search`、首屏预加载重试与恢复入口、UberLLM Chat 渠道、龙影水墨／云鹤仙观默认主题、Gemini 独立分辨率与思考等级、渠道网站分组与批量模板、剪映交付素材预检。
+  - [ ] 批次一遗留的六项浏览器验收与 #1000 原生编码 × 本分支压缩副本的组合回归。
+  - [ ] OIDC 真实提供方验收；LAN compose 是否补透传那 5 个 `CANVAS_OIDC_*`（坑 33）——未动、等他裁决。
+  - [ ] `backend:pi-runtime` 这条上游新门禁仍未跑（缺 `node_modules`，Pi 依赖跨大版本）——未装、未跑，装不装等他裁决。
+  - [ ] `channel-model-templates` harness 那条 5,005～5,260ms 贴线用例：是否在本地测试里显式加 `--timeout`／用例级超时，或向上游反馈。
+
+
 ## 合并上游 v1.8.5（2026-11-12，同日第二轮追合，未部署、未推送）
 
 - 开工取证：`git status --porcelain=v1` 空、无 `MERGE_HEAD`、在 `main`；`main` = `5e2df04e`（批次一合并提交）、`origin/main` = `a3f6d728`、本地领先 fork 58；fetch 后 `upstream/main` = `17aaecbb`。批次一收尾时回读发现上游在合并进行中又发了 v1.8.5，按既有惯例本可留到下一轮，他裁决「先追合 v1.8.5 再一起部署」，故本轮在同一天补第二笔合并。
