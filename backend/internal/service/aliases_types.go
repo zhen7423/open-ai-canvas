@@ -26,6 +26,7 @@ type (
 	PaymentOrderQuery                      = app.PaymentOrderQuery
 	PaymentReconciliationQuery             = app.PaymentReconciliationQuery
 	CloudAgentRequest                      = app.CloudAgentRequest
+	CloudAgentPageContext                  = app.CloudAgentPageContext
 	CloudAgentRunViewOptions               = app.CloudAgentRunViewOptions
 	CloudAgentMediaSettings                = app.CloudAgentMediaSettings
 	CloudAgentCapabilitySet                = app.CloudAgentCapabilitySet
@@ -216,6 +217,9 @@ type (
 	LibTVImportMetadata                    = app.LibTVImportMetadata
 	LibTVImportWarning                     = app.LibTVImportWarning
 	LibTVSettingRequest                    = app.LibTVSettingRequest
+	LibTVConnectStartRequest               = app.LibTVConnectStartRequest
+	LibTVConnectStartResult                = app.LibTVConnectStartResult
+	LibTVConnectCompleteRequest            = app.LibTVConnectCompleteRequest
 	LinkCanvasUnitRequest                  = app.LinkCanvasUnitRequest
 	LinkProjectAssetRequest                = app.LinkProjectAssetRequest
 	LinkShotAssetRequest                   = app.LinkShotAssetRequest
@@ -293,12 +297,14 @@ type (
 	PublicOSSSetting                       = app.PublicOSSSetting
 	PublicProviderEgressSetting            = app.PublicProviderEgressSetting
 	PublicRegistrationSetting              = app.PublicRegistrationSetting
+	PublicTurnstileSetting                 = app.PublicTurnstileSetting
 	PublicRuntimeLimits                    = app.PublicRuntimeLimits
 	PublicRuntimePolicySetting             = app.PublicRuntimePolicySetting
 	RedeemBatchPage                        = app.RedeemBatchPage
 	RegisterRequest                        = app.RegisterRequest
 	RegisterTaskOutputRequest              = app.RegisterTaskOutputRequest
 	RegistrationSettingRequest             = app.RegistrationSettingRequest
+	TurnstileSettingRequest                = app.TurnstileSettingRequest
 	ReorderProjectUnitsRequest             = app.ReorderProjectUnitsRequest
 	ReplaceCharacterRepresentationsRequest = app.ReplaceCharacterRepresentationsRequest
 	ReplaceProjectUnitShotInput            = app.ReplaceProjectUnitShotInput
