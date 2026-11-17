@@ -188,8 +188,9 @@ func TestMidjourneyProviderCatalogExposesDeclaredParameters(t *testing.T) {
 	}
 	catalog := (&Service{pluginRuntime: center}).PluginProviderCatalog(string(protocol.SurfaceAdminSystemChannel), string(protocol.CapabilityImage), false)
 	want := map[string]string{
-		"cangyuan-midjourney-v82": "providerOptions",
-		"kacang-midjourney":       "providerOptions",
+		"cangyuan-midjourney-v82":     "providerOptions",
+		"cangyuan-midjourney-v82-web": "providerOptions",
+		"kacang-midjourney":           "providerOptions",
 	}
 	for providerID, parameterName := range want {
 		var item *PluginProviderCatalogItem

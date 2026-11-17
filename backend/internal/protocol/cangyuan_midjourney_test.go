@@ -83,7 +83,62 @@ func TestCangyuanMidjourneyV82VersionsReferencesAndMask(t *testing.T) {
 	}
 }
 
+func TestCangyuanMidjourneyV82WebLineSendsOfficialContract(t *testing.T) {
+	adapter := cangyuanAdapter(t, "cangyuan-midjourney-v82-web")
+	// 大小写不敏感校验，出站固定按供应商官网写法发送。
+	request := GenerationRequest{Model: "midjourney-v8.2", Prompt: "portrait", ImageCount: 1, AspectRatio: "auto"}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Path != "/v1/images/generations" || body["model"] != "Midjourney-v8.2" || body["prompt"] != request.Prompt || body["response_format"] != "url" || body["async"] != false {
+		t.Fatalf("create = %#v, body = %#v", spec, body)
+	}
+	// n 与蒙版都在该线路的合同之外；size 为 auto 时不发送，未设置的扩展参数同样省略。
+	for _, key := range []string{"n", "size", "images", "mask", "speed", "reference", "weird", "hd", "reference_slots", "quality", "resolution"} {
+		if _, ok := body[key]; ok {
+			t.Fatalf("unsupported field %s was emitted: %#v", key, body)
+		}
+	}
+	poll, err := adapter.BuildPoll(context.Background(), PollContext{Request: request, TaskID: "task-42"})
+	if err != nil || poll.Path != "/v1/images/generations/task-42" {
+		t.Fatalf("poll = %#v, err = %v", poll, err)
+	}
+
+	// weird=0 与 hd=false 是用户显式选择的值，不能被当作空值丢弃。
+	request.AspectRatio = "9:16"
+	request.ProviderOptions = map[string]map[string]any{"cangyuan-midjourney-v82-web": {"weird": 0, "hd": false, "reference_slots": "content, Style "}}
+	request.Images = []MediaReference{{URL: "https://example.com/second.png", Role: "edit_source", Order: 2}, {URL: "https://example.com/first.png", Role: "edit_source", Order: 1}}
+	spec, err = adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = manifestTestBody(t, spec)
+	slots, _ := body["reference_slots"].([]any)
+	if body["size"] != "9:16" || body["weird"] != float64(0) || body["hd"] != false || len(slots) != 2 || slots[0] != "content" || slots[1] != "style" {
+		t.Fatalf("extended body = %#v", body)
+	}
+	images, _ := body["images"].([]any)
+	if len(images) != 2 || images[0] != "https://example.com/first.png" {
+		t.Fatalf("images = %#v", images)
+	}
+	if _, ok := body["n"]; ok {
+		t.Fatalf("n must stay absent even with reference images: %#v", body)
+	}
+}
+
 func TestCangyuanMidjourneyRejectsInvalidInputs(t *testing.T) {
+	webOptions := func(value string) map[string]map[string]any {
+		return map[string]map[string]any{"cangyuan-midjourney-v82-web": {"reference_slots": value}}
+	}
+	webImages := func(count int) []MediaReference {
+		images := make([]MediaReference, 0, count)
+		for index := 0; index < count; index++ {
+			images = append(images, MediaReference{URL: "https://example.com/reference.png", Role: "edit_source", Order: index})
+		}
+		return images
+	}
 	for _, tc := range []struct {
 		name, provider string
 		request        GenerationRequest
@@ -96,6 +151,13 @@ func TestCangyuanMidjourneyRejectsInvalidInputs(t *testing.T) {
 		{"v7 mask", "cangyuan-midjourney-v7", GenerationRequest{Model: "midjourney-v7", Prompt: "portrait", Images: []MediaReference{{URL: "https://example.com/mask.png", Role: "mask"}}}},
 		{"editor missing source", "cangyuan-midjourney-v82", GenerationRequest{Model: "midjourney-1k", Prompt: "portrait", Images: []MediaReference{{URL: "https://example.com/mask.png", Role: "mask"}}}},
 		{"invalid speed", "cangyuan-midjourney-v82", GenerationRequest{Model: "midjourney-1k", Prompt: "portrait", ProviderOptions: map[string]map[string]any{"cangyuan-midjourney-v82": {"speed": "turbo"}}}},
+		{"web line rejects 1k model", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "midjourney-1k", Prompt: "portrait"}},
+		{"web mask", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: []MediaReference{{URL: "https://example.com/mask.png", Role: "mask"}}}},
+		{"web prompt over 1024", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: strings.Repeat("画", 1025)}},
+		{"web over eight references", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(9)}},
+		{"web slots required above four", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(5)}},
+		{"web slots count mismatch", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(2), ProviderOptions: webOptions("content")}},
+		{"web slots unknown value", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(2), ProviderOptions: webOptions("content,moodboard")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := cangyuanAdapter(t, tc.provider).BuildCreate(context.Background(), RequestContext{Request: tc.request}); err == nil {
@@ -106,7 +168,7 @@ func TestCangyuanMidjourneyRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestCangyuanMidjourneyPreservesAllResultsAndTaskStates(t *testing.T) {
-	for _, provider := range []string{"cangyuan-midjourney-v7", "cangyuan-midjourney-v82"} {
+	for _, provider := range []string{"cangyuan-midjourney-v7", "cangyuan-midjourney-v82", "cangyuan-midjourney-v82-web"} {
 		adapter := cangyuanAdapter(t, provider)
 		for _, payload := range []string{`{"data":[{"url":"https://example.com/1.png"},{"url":"https://example.com/2.png"},{"url":"https://example.com/3.png"},{"url":"https://example.com/4.png"}]}`, `{"id":"task-42","status":"completed","data":[{"url":"https://example.com/1.png"},{"url":"https://example.com/2.png"},{"url":"https://example.com/3.png"},{"url":"https://example.com/4.png"}]}`} {
 			result, err := adapter.ParseCreate(context.Background(), []byte(payload))

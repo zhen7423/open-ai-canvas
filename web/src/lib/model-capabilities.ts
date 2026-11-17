@@ -332,8 +332,10 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
         image.maxOutputs = 1;
         return image;
     }
-    if (protocol === "cangyuan-midjourney-v7" || protocol === "cangyuan-midjourney-v82") {
+    if (protocol === "cangyuan-midjourney-v7" || protocol === "cangyuan-midjourney-v82" || protocol === "cangyuan-midjourney-v82-web") {
         const v7 = protocol === "cangyuan-midjourney-v7";
+        // 官网模型名线路：提示词 1024、参考图 8 张、无蒙版，且不传 n。
+        const web = protocol === "cangyuan-midjourney-v82-web";
         const tier =
             !v7 &&
             model
@@ -343,13 +345,13 @@ export function defaultImageCapabilityConfig(protocol?: ModelProtocol, model = "
                 ? "2k"
                 : "1k";
         const ratios = v7 ? ["1:1", "3:2", "2:3", "4:3", "3:4", "4:5", "5:4", "16:9", "9:16", "21:9"] : ["1:1", "3:2", "2:3", "4:3", "3:4", "4:5", "5:4", "16:9", "9:16", "1:2", "6:11", "5:6", "2:1", "11:6", "6:5"];
-        image.references = { ...image.references, promptMaxChars: v7 ? 4000 : 32000, maxImages: v7 ? 5 : 1, maskSupported: !v7 };
+        image.references = { ...image.references, promptMaxChars: web ? 1024 : v7 ? 4000 : 32000, maxImages: v7 ? 5 : web ? 8 : 1, maskSupported: !v7 && !web };
         image.size = { parameter: "aspect_ratio", values: ["auto", ...ratios], default: "auto", allowCustom: false, presets: ratios.map((ratio) => imagePresetForRatio(tier, ratio)) };
         image.quality = { supported: false, values: [], default: "auto" };
         image.transparentBackground = { supported: false, default: false };
         image.responseFormat = { supported: false };
         image.outputFormat = { supported: false };
-        // n=1 是一次提交；供应商返回的四张图片仍全部消费。
+        // n=1 是一次提交（官网线路干脆不传 n）；供应商返回的四张图片仍全部消费。
         image.maxOutputs = 1;
         return image;
     }

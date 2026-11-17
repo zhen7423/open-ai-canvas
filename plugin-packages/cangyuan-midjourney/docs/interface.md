@@ -4,10 +4,10 @@
 
 - V7：https://ai.cangyuansuanli.cn/docs/models/midjourney-v7
 - V8.2 / 1K / 2K：https://ai.cangyuansuanli.cn/docs/models/midjourney-1k
-- 模型清单以渠道 `GET /v1/models` 为准：`midjourney-v7`、`midjourney-1k`、`midjourney-2k`。
-- 插件 ID `cangyuan-midjourney`；Provider ID `cangyuan-midjourney-v7`、`cangyuan-midjourney-v82`。
+- 模型清单以渠道 `GET /v1/models` 为准：`midjourney-v7`、`midjourney-1k`、`midjourney-2k`、`Midjourney-v8.2`。
+- 插件 ID `cangyuan-midjourney`；Provider ID `cangyuan-midjourney-v7`、`cangyuan-midjourney-v82`、`cangyuan-midjourney-v82-web`。
 - 配置 `apiKey`（secret、必填），由宿主渠道配置提供；鉴权 `Authorization: Bearer <TOKEN>`。
-- 创建 `POST /v1/images/generations`；源图编辑 `POST /v1/images/edits`。
+- 创建 `POST /v1/images/generations`；源图编辑 `POST /v1/images/edits`。V8.2 官网线路只用 generations。
 - 查询 `GET /v1/images/generations/{task_id}`；编辑查询 `GET /v1/images/edits/{task_id}`。
 - 默认同步等待（`async=false`）；保留任务 ID、查询路径以及 pending/completed/failed 的响应解析。
 - 不声明取消或单独结果下载端点，供应商未提供相应合同。
@@ -16,18 +16,21 @@
 
 | 参数 | 映射与约束 |
 | --- | --- |
-| `model` | 两条线路分别校验公开模型名，不自动换模型。 |
-| `prompt` | 原样传递；V7 最多 4000 字符。1K/2K 可在提示词写 `--v 8.2`，省略版本时由供应商默认 V8.2。 |
-| `images` | 依据宿主 role 排序，映射为 HTTPS URL 字符串数组；不能发 data URI 或本地文件。V7 最多 5 张，拒绝蒙版。 |
-| `imageCount` | 只能为 1 或未设置，上游固定 `n=1`；返回多张不截断。 |
-| `aspectRatio` | 传 `size`；空值或 auto 不发送。V7 支持 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9 及对应宽x高；默认 16:9。1K/2K 支持 1:2 / 6:11 / 9:16 / 2:3 / 3:4 / 4:5 / 5:6 / 1:1 及其反向比例。 |
+| `model` | 三条线路分别校验公开模型名，不自动换模型。V8.2 官网线路不区分大小写校验 `Midjourney-v8.2`，出站按官网写法发送。 |
+| `prompt` | 原样传递；V7 最多 4000 字符，V8.2 官网线路最多 1024 个字符。1K/2K 可在提示词写 `--v 8.2`，省略版本时由供应商默认 V8.2。 |
+| `images` | 依据宿主 role 排序，映射为 HTTPS URL 字符串数组；不能发 data URI 或本地文件。V7 最多 5 张，拒绝蒙版；V8.2 官网线路最多 8 张，同样拒绝蒙版。 |
+| `imageCount` | 只能为 1 或未设置；V7 与 1K/2K 上游固定 `n=1`，V8.2 官网线路不发送 `n`。返回多张不截断。 |
+| `aspectRatio` | 传 `size`；空值或 auto 不发送。V7 支持 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9 及对应宽x高；默认 16:9。1K/2K 支持 1:2 / 6:11 / 9:16 / 2:3 / 3:4 / 4:5 / 5:6 / 1:1 及其反向比例。V8.2 官网线路只写比例，不写宽x高。 |
 | `providerOptions` | 仅 1K/2K 使用 `cangyuan-midjourney-v82.speed`（relax / fast）和 `reference`（image / style / edit / moodboard / editor）。不把速度映射为 quality。 |
+| `providerOptions`（V8.2 官网线路） | 使用 `cangyuan-midjourney-v82-web` 命名空间：`weird`（整数，插件声明 0–3000，渠道可收窄）、`hd`（布尔）、`reference_slots`（与参考图同序、逗号分隔的 `content` / `style`）。三者未设置时都不发送。 |
 
 `reference=editor` 或宿主显式 `edit_source` 默认走 edits，必须只有一张源图；`reference=edit` 走 generations，最多四张图。mask role 单独映射为 `mask` HTTPS URL，仅 editor 可用。style/moodboard 等含义由调用方显式指定，插件不猜测风格用途。speed 不指定时不发送，沿用供应商默认或 prompt 中的 --fast/--relax；两者同时指定时须一致。
 
+V8.2 官网线路不区分参考与编辑：参考图一律进 `images`，端点固定 generations。参考图超过 4 张时必须填 `reference_slots`，逐项 `content` 或 `style`，条数须与参考图数一致；出站前逐项去空格并转小写，`hd` 关闭需显式选择（缺省即供应商的开启档）。`weird` 是 V8.2 相对 V8.1 新增项，插件不预设默认值。
+
 V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resolution、background、output_format、mask。1K/2K 不发送 quality、resolution、aspect_ratio、background、output_format，不支持 b64_json；不要写 --turbo，1K 不写 --hd。
 
-两条线路均固定 `response_format=url`、`async=false`。请求完整字段、校验表达式与动态端点见下方 Manifest，未列出的字段不透传。
+三条线路均固定 `response_format=url`、`async=false`。请求完整字段、校验表达式与动态端点见下方 Manifest，未列出的字段不透传。
 
 ## 响应、保存和错误
 
@@ -53,9 +56,9 @@ V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resol
   "apiVersion": "yingce.plugin/v2",
   "id": "cangyuan-midjourney",
   "name": "沧元 Midjourney",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "沧元算力 / 影绘",
-  "description": "独立适配 V7 与默认 V8.2 的 1K/2K 线路，按供应商合同创建、查询并提取全部图片。",
+  "description": "独立适配 V7、默认 V8.2 的 1K/2K 线路与 V8.2 官网模型名线路，按供应商合同创建、查询并提取全部图片。",
   "enabled": true,
   "installable": true,
   "permissions": [
@@ -117,7 +120,7 @@ V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resol
             "type": "string",
             "required": true,
             "mapping": "model",
-            "description": "供应商公开模型名；两条线路分别校验。"
+            "description": "供应商公开模型名；三条线路分别校验，本线路只认自己的模型名。"
           },
           {
             "name": "prompt",
@@ -553,7 +556,7 @@ V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resol
             "type": "string",
             "required": true,
             "mapping": "model",
-            "description": "供应商公开模型名；两条线路分别校验。"
+            "description": "供应商公开模型名；三条线路分别校验，本线路只认自己的模型名。"
           },
           {
             "name": "prompt",
@@ -1374,6 +1377,641 @@ V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resol
               }
             ]
           }
+        },
+        "response": {
+          "taskIdPaths": [
+            "id",
+            "task_id"
+          ],
+          "statusPaths": [
+            "status"
+          ],
+          "errorPaths": [
+            "error.code"
+          ],
+          "messagePaths": [
+            "error.message",
+            "message"
+          ],
+          "images": {
+            "$map": {
+              "from": {
+                "$ref": "response.data"
+              },
+              "as": "item",
+              "in": {
+                "url": {
+                  "$ref": "item.url"
+                }
+              }
+            }
+          },
+          "usage": {
+            "$ref": "response.usage"
+          }
+        }
+      },
+      {
+        "id": "cangyuan-midjourney-v82-web",
+        "label": "沧元 Midjourney V8.2 · 官网模型名",
+        "capabilities": [
+          "image"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://ai.cangyuansuanli.cn/v1",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "imageParameters": [
+          {
+            "name": "size",
+            "label": "画幅比例",
+            "type": "string",
+            "binding": "aspectRatio",
+            "description": "只写比例，如 16:9；空值和 auto 不发送，沿用供应商默认。"
+          },
+          {
+            "name": "count",
+            "label": "生成数量",
+            "type": "integer",
+            "binding": "imageCount",
+            "min": 1,
+            "max": 1,
+            "step": 1,
+            "default": 1,
+            "description": "一次提交固定不传 n；供应商每次返回 4 张，全部保存。"
+          },
+          {
+            "name": "weird",
+            "label": "Weird 奇异度",
+            "type": "integer",
+            "binding": "providerOptions.cangyuan-midjourney-v82-web.weird",
+            "min": 0,
+            "max": 3000,
+            "step": 1,
+            "description": "V8.2 相对 V8.1 多出的参数；不设置即不发送。渠道可收窄上限。"
+          },
+          {
+            "name": "hd",
+            "label": "HD 高清",
+            "type": "boolean",
+            "binding": "providerOptions.cangyuan-midjourney-v82-web.hd",
+            "description": "不发送时供应商按开启处理；关闭需显式选“关闭”。"
+          },
+          {
+            "name": "reference_slots",
+            "label": "参考图用途",
+            "type": "string",
+            "binding": "providerOptions.cangyuan-midjourney-v82-web.reference_slots",
+            "maxLength": 128,
+            "description": "与参考图同序、逗号分隔的 content / style 列表，如 content,style。超过 4 张参考图时必填。"
+          }
+        ],
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "供应商公开模型名，大小写不敏感校验，出站固定改写为 Midjourney-v8.2。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "原提示词，最多 1024 个字符；官网 --v / --niji 等参数由供应商按模型档位处理。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "mapping": "images[]",
+            "description": "按宿主显式 role 排序后转换为 HTTPS URL 字符串数组，最多 8 张；不接受蒙版。"
+          },
+          {
+            "name": "imageCount",
+            "type": "integer",
+            "mapping": "不发送",
+            "description": "线路固定不传 n，一次任务返回的 4 张图片全部保存。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "mapping": "size",
+            "description": "只写比例；空值和 auto 不发送，沿用供应商默认值。"
+          },
+          {
+            "name": "providerOptions",
+            "type": "object",
+            "mapping": "cangyuan-midjourney-v82-web.weird/hd/reference_slots",
+            "description": "weird 为整数、hd 为布尔、reference_slots 为逗号分隔的 content/style；三者未设置时都不发送。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$lower": {
+                    "$trim": {
+                      "$ref": "request.model"
+                    }
+                  }
+                },
+                [
+                  "midjourney-v8.2"
+                ]
+              ]
+            },
+            "message": "模型名与 Midjourney V8.2 官网线路不匹配，请填写 Midjourney-v8.2。"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$ref": "request.imageCount"
+                },
+                1
+              ]
+            },
+            "message": "Midjourney V8.2 一次提交不传 n；返回的 4 张图片会全部保存。"
+          },
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$ref": "request.prompt"
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "Midjourney 提示词不能为空。"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$ref": "request.prompt"
+                  }
+                },
+                1024
+              ]
+            },
+            "message": "Midjourney V8.2 提示词最多 1024 个字符。"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$ne": [
+                          {
+                            "$first": {
+                              "$split": [
+                                {
+                                  "$ref": "media.value"
+                                },
+                                ":"
+                              ]
+                            }
+                          },
+                          "https"
+                        ]
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "Midjourney 参考图和蒙版必须是 HTTPS URL，不能发送本地文件或 data URI。"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$ne": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "mask"
+                        ]
+                      }
+                    }
+                  }
+                },
+                8
+              ]
+            },
+            "message": "Midjourney V8.2 参考图最多 8 张。"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$eq": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "mask"
+                        ]
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "Midjourney V8.2 线路不支持蒙版。"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$lte": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$ne": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "mask"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    4
+                  ]
+                },
+                {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$trim": {
+                          "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.reference_slots"
+                        }
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            },
+            "message": "Midjourney V8.2 超过 4 张参考图时必须填写参考图用途（与参考图同序，逗号分隔的 content / style）。"
+          },
+          {
+            "assert": {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$len": {
+                        "$trim": {
+                          "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.reference_slots"
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                {
+                  "$and": [
+                    {
+                      "$gt": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$ref": "request.images"
+                              },
+                              "as": "media",
+                              "where": {
+                                "$ne": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  "mask"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$split": [
+                              {
+                                "$trim": {
+                                  "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.reference_slots"
+                                }
+                              },
+                              ","
+                            ]
+                          }
+                        },
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$ref": "request.images"
+                              },
+                              "as": "media",
+                              "where": {
+                                "$ne": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  "mask"
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$split": [
+                                  {
+                                    "$trim": {
+                                      "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.reference_slots"
+                                    }
+                                  },
+                                  ","
+                                ]
+                              },
+                              "as": "slot",
+                              "where": {
+                                "$not": {
+                                  "$in": [
+                                    {
+                                      "$lower": {
+                                        "$trim": {
+                                          "$ref": "slot"
+                                        }
+                                      }
+                                    },
+                                    [
+                                      "content",
+                                      "style"
+                                    ]
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "message": "Midjourney V8.2 的参考图用途必须与参考图同序，逐项写 content 或 style。"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/images/generations",
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$switch": {
+                "cases": [
+                  {
+                    "when": {
+                      "$eq": [
+                        {
+                          "$lower": {
+                            "$trim": {
+                              "$ref": "request.model"
+                            }
+                          }
+                        },
+                        "midjourney-v8.2"
+                      ]
+                    },
+                    "then": "Midjourney-v8.2"
+                  }
+                ],
+                "default": {
+                  "$ref": "request.model"
+                }
+              }
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "n": null,
+            "size": {
+              "$if": {
+                "condition": {
+                  "$in": [
+                    {
+                      "$lower": {
+                        "$trim": {
+                          "$ref": "request.aspectRatio"
+                        }
+                      }
+                    },
+                    [
+                      "",
+                      "auto"
+                    ]
+                  ]
+                },
+                "then": null,
+                "else": {
+                  "$ref": "request.aspectRatio"
+                }
+              }
+            },
+            "images": {
+              "$if": {
+                "condition": {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$ne": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "mask"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                "then": {
+                  "$map": {
+                    "from": {
+                      "$sortByOrder": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$ne": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "mask"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "as": "media",
+                    "in": {
+                      "$ref": "media.value"
+                    }
+                  }
+                },
+                "else": null
+              }
+            },
+            "reference_slots": {
+              "$if": {
+                "condition": {
+                  "$and": [
+                    {
+                      "$gt": [
+                        {
+                          "$len": {
+                            "$filter": {
+                              "from": {
+                                "$ref": "request.images"
+                              },
+                              "as": "media",
+                              "where": {
+                                "$ne": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  "mask"
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    },
+                    {
+                      "$gt": [
+                        {
+                          "$len": {
+                            "$trim": {
+                              "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.reference_slots"
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    }
+                  ]
+                },
+                "then": {
+                  "$map": {
+                    "from": {
+                      "$split": [
+                        {
+                          "$trim": {
+                            "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.reference_slots"
+                          }
+                        },
+                        ","
+                      ]
+                    },
+                    "as": "slot",
+                    "in": {
+                      "$lower": {
+                        "$trim": {
+                          "$ref": "slot"
+                        }
+                      }
+                    }
+                  }
+                },
+                "else": null
+              }
+            },
+            "weird": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.weird"
+              }
+            },
+            "hd": {
+              "$omitEmpty": {
+                "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.hd"
+              }
+            },
+            "response_format": "url",
+            "async": false
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/images/generations/{{taskId}}"
         },
         "response": {
           "taskIdPaths": [
