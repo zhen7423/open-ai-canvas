@@ -93,7 +93,7 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 		return nil
 	}
 	resourceID := strings.TrimPrefix(media.StorageKey, "resource:")
-	resource, err := s.repo.ResourceForUser(userID, resourceID)
+	resource, err := s.resourceForUserOrOfficial(userID, resourceID)
 	if err != nil {
 		return fmt.Errorf("读取任务参考资源失败：%w", err)
 	}
@@ -145,10 +145,11 @@ func (s *Service) hydrateProviderMedia(userID string, media *providerMedia, poli
 			return nil
 		}
 	}
-	resource, body, err := s.OpenResource(userID, resourceID)
+	stream, err := s.openResourceRange(resource.UserID, resource, "")
 	if err != nil {
 		return fmt.Errorf("读取任务参考资源失败：%w", err)
 	}
+	body := stream.Body
 	defer body.Close()
 	runtimePolicy, err := s.RuntimePolicy()
 	if err != nil {
