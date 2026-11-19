@@ -5,6 +5,13 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 合并上游 v1.8.7 之后 3 个前端提交（2026-11-19 深夜，LAN 栈，仅重建 web）
+
+- 上游在 v1.8.7 之后又推进 `8580004f..e5a7671b` 共 **3 提交**（末号 `e5a7671b`，`2026-11-19 20:37:05 +0800`）：`3602201c`（Agent 输入框模型选择器按面板宽度渐进收纳文案，`web/src/components/model-picker.tsx` 新增 `adaptiveTrigger` 与 `triggerLabelParts`，收纳样式走 `web/src/components/canvas/canvas-cloud-agent.css` 的容器查询）、`367846d0`（灵感详情图片与内容布局，修背板、文件夹拖动带出输入框）、`e5a7671b`（创作首页按提示词内容自动展开输入区，`web/src/pages/create/creation-workspace.tsx` 用 `clampCreationPromptHeight` 把 `48..300` 夹住）。变更面 **7 只文件、+254/−108**，全部在 `web/src`（pages 4 只、components 3 只）。
+- **无冲突**（`git merge --no-commit --no-ff upstream/main` 直接自动合并成功）。`VERSION` 仍是 v1.8.7，**后端零改动、无新迁移**，所以只重建 web 镜像、backend 不重启。
+- 门禁：`tsc --noEmit` 退出 0；`bun test` **3628 pass／19 fail**（547 文件，761.40s）。19 条仍是环境红：14 条因 bun 镜像无 git（8 `changed-file formatting gate` ＋ 6 `commit image reuse`／`digest promotion`），5 条 5 秒超时用 `--timeout 60000` 复跑得 **20 pass／0 fail**。**记一条操作坑**：复跑输出走 `Select-Object -Last` 截断管道会让 bun 报 exit 1（实际全绿），改成重定向到文件再看退出码即 `bun_exit=0`。
+- 部署：只 `docker compose -f docker-compose.lan.yml --env-file .env.lan up -d web` 重建 web 容器；backend 全程未重启（`Up 29 minutes (healthy)`，`/api/health/ready` 仍 `v1.8.7`、`schema 9001/9001`、`activeWorkerTasks=0`）。前端入口由 `index--fIoUh5U.js` 换成 **`index-BU3F-_25.js`**，镜像内 md5 `d4acd779551c983e7bec5ff17e27480d` 与 `http://127.0.0.1:1888/assets/index-BU3F-_25.js` 回读**逐字节相同**，assets 仍 1704 只。新代码确实进包：`canvas-model-picker-trigger-primary` 落在 `model-picker-D9e_9wfR.js`，`creation-chat-mention-editor` 落在 `create-*.js` 与 `create-*.css`。web 容器重起后首轮 `/` 探针因 nginx 尚未就绪失败、第二次 200/7513 B，15 分钟日志 0 条 404／500／error。
+
 ## 合并上游 v1.8.7 并部署推送（2026-11-19 晚，LAN 栈，14 提交，末号 `8580004f`）
 
 - 开工取证：`git status --porcelain` 空、无 `MERGE_HEAD`、`main` = `origin/main`、fetch 后 `upstream/main` 比本地多 **14 提交**（末号 `8580004f`）、`VERSION` 仍是 v1.8.6。批次形态是**发版批次**：上游 `VERSION` 已到 v1.8.7、`CHANGELOG.md` 有 `## v1.8.7` 段、`migrations.go` 新增 **106 `team_workspaces`**／**107 `company_workgroups`**／**108 `shared_workspace_content`** 三个号（上游侧 `CurrentSchemaVersion` 105 → 108）⇒ 本分支常量仍取 `providerEgressMigrationVersion`（9001），上游三条插在保留段条目之前。
