@@ -387,8 +387,13 @@ var schemaMigrations = []migration{
 	{version: 103, name: "mcp_tenant_boundaries", checksum: "sha256:mcp-tenant-boundaries-v103", apply: migrateMCPTenantBoundaries},
 	{version: 104, name: "agent_storage_limits", checksum: "sha256:agent-storage-limits-v104", apply: migrateAgentStorageLimits},
 	{version: 105, name: "image_usage_billing", checksum: "sha256:image-usage-billing-v105", apply: migrateImageUsageBilling},
+	{version: 106, name: "team_workspaces", checksum: "sha256:team-workspaces-v106", apply: migrateTeamWorkspaces},
+	{version: 107, name: "company_workgroups", checksum: "sha256:company-workgroups-v107", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.Team{})
+	}},
+	{version: 108, name: "shared_workspace_content", checksum: "sha256:shared-workspace-content-v108", apply: migrateSharedWorkspaceContent},
 	// 本仓库分支的出站内镜台账：先后登记在 51、55、57、58，每一次都因为上游占用同号而让位
-	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 105），
+	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 108），
 	// 因此固定落在保留段末项 9001，不再随上游发版改号。旧账本由
 	// normalizeLegacyProviderEgressMigration 改写，不要求手工改 schema_migrations。
 	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
