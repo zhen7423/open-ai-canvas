@@ -392,8 +392,25 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.Team{})
 	}},
 	{version: 108, name: "shared_workspace_content", checksum: "sha256:shared-workspace-content-v108", apply: migrateSharedWorkspaceContent},
+	{version: 109, name: "model_protocol_releases", checksum: "sha256:model-protocol-releases-v109", apply: func(tx *gorm.DB) error {
+		for _, column := range []struct {
+			entity any
+			name   string
+		}{{&model.ChannelModel{}, "ProtocolRelease"}, {&model.Task{}, "ProtocolBindingJSON"}, {&model.RouteAttempt{}, "ProtocolBindingJSON"}} {
+			if !tx.Migrator().HasTable(column.entity) || tx.Migrator().HasColumn(column.entity, column.name) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(column.entity, column.name); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&model.ChannelModel{}) || tx.Migrator().HasIndex(&model.ChannelModel{}, "ProtocolRelease") {
+			return nil
+		}
+		return tx.Migrator().CreateIndex(&model.ChannelModel{}, "ProtocolRelease")
+	}},
 	// 本仓库分支的出站内镜台账：先后登记在 51、55、57、58，每一次都因为上游占用同号而让位
-	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 108），
+	// （58 自上游 v1.6.9 起由 agent_memory_proposals 正式使用，上游现已推进到 109），
 	// 因此固定落在保留段末项 9001，不再随上游发版改号。旧账本由
 	// normalizeLegacyProviderEgressMigration 改写，不要求手工改 schema_migrations。
 	{version: providerEgressMigrationVersion, name: providerEgressMigrationName, checksum: providerEgressMigrationChecksum, apply: func(tx *gorm.DB) error {
