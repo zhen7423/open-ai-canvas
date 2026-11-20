@@ -5,6 +5,29 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 合并上游 v1.8.7.1 并部署（2026-11-20，LAN 栈，14 提交，末号 `882a1d1a`）
+
+- 开工取证：`git status --porcelain` 空、无 `MERGE_HEAD`、`main` = `origin/main` = `63f113c4`、fetch 后 `upstream/main` = `882a1d1a`、落后 **14 提交**、`VERSION` 仍是 v1.8.7。批次形态是**发版批次**：上游 `VERSION` 已到 v1.8.7.1、`CHANGELOG.md` 新增 `## v1.8.7.1` 段、`migrations.go` 新增 **109 `model_protocol_releases`**（上游侧 `CurrentSchemaVersion` 108 → 109）⇒ 本分支常量仍取 `providerEgressMigrationVersion`（9001，`migrations.go:42`），9001 仍是列表末项。
+- 变更面 273 只（29 新增／244 修改、零删除，19453 增／2990 删）：`backend/internal` 115、`web/src` 101、`web/test` 25、`docs/content` 8、`plugin-packages` 四个包（`kling-v4-official` 整套新增 7 只、`dashscope-wan3-video` 2、`xai-video` 2、`generate-catalog.mjs` 1）。**部署侧 churn 一行**：`Dockerfile:16` 的 web-build 阶段新增 `COPY backend/internal/app/video_model_presets.json`（上游新增文件）⇒ 镜像必须用合并树重建。
+- 冲突 3 处（交集 13 只）：`migrations.go` 两块（块 1 取本分支常量；块 2 上游 109 条目在前、9001 连同注释整块插回末项、注释 108 → 109）、`outbound.go`（`blockedCustomRelayIP` 保留本分支实现，其后接上游 `IsPublicHTTPSMediaURL` 整函数）、`pending-test.mdx` 顶部块（两侧都留＋接缝补空行）；其余 10 只自动合并（`provider.go` 上游 115/86 行、`admin-ui.css` 64/43、`model-capabilities.ts` 13/40 等逐只核过语义）。
+- 交集逐只比对（BASE `e5a7671b`、PRE `63f113c4`）：13 只文件里本分支新增的 **1094 条行逐条命中合并树、丢失 0 行**，唯一有意改写是 `migrations.go` 那行注释号位；全仓库冲突标记命中 0。
+- 门禁：`gofmt -l` 对 146 只改动 `.go` 的 LF 副本判 0 文件；后端 `go build ./...`／`go vet ./internal/...`／`go test -count=1 -timeout 30m ./internal/...` 退出码全 0（`internal/app` 690.108s，默认 10m 会撞线）；前端 `tsc --noEmit` 0、`bun test test/` **3590 pass／15 fail／82300 expect／534 文件／379.05s**，基线 `63f113c4` **3560 pass／21 fail／1 error／532 文件／308.38s**，**失败名单「仅合并后有」0 条**（15 条＝9 `changed-file formatting gate`＋2 `commit image reuse`＋3 `digest promotion` 的镜像无 git／prettier 环境红 ＋ 1 条 `真实渠道模型编辑器的模板、金额门禁、协议建议与保存交互`，后者在基线同样红）。
+- 部署（UTC）：**镜像内容实锤前置**（backend 二进制带边界命中 `v1.8.7.1`、web 镜像内 `index.html` md5 `ed80800d9b7af612adec3219147d6c80`）→ 04:15 读 `activeWorkerTasks=0`／`draining=false` → 04:16:07 停 backend → 卷内备份 **`pre-merge-v1871-20261120T041607Z`**（2,700,427,264 B，md5 `463fd26d54ff61fdf3daf8b57af9b2eb`；优雅停止已把 `-wal`／`-shm` checkpoint 回主库，卷里只剩单个 `.db`；原有 6 份备份一份没删）→ 副本预演 `migrate-schema up` 与 `verify` 各 0（`{"current":9001,"expected":9001,"yingceCurrent":4,"yingceExpected":4,"ready":true}`）→ 真卷 `up`（109 @04:19:43）＋`verify` 0 → `up -d`，两容器 20 秒内 healthy。
+- 账本与业务读数：`schema_migrations` 补出 **109 @2026-11-20T04:19:43.384331330Z**、`9001` 仍 **2026-10-12 01:14:32.864590311**、扩展链 `yingce_schema_migrations` 仍 4 行；业务行数与部署前逐项相等——`tasks` 3699、`resources` 566、`assets` 493、`billing_orders` 3221（`refunded` 303／`running` 6／`settled` 2758／`uncertain` 154）、`credit_accounts` 3、`ledger_entries` 6307、`canvas_projects` 6、`receipts` 1684 且 `MIN` 2026-11-13 03:38:56／`MAX` 2026-11-20 02:07:12 **前后未变**、`email_logs` 0、`site_traffic_events` 119、`provider_egress_objects` 26、`cloud_agent_canvas_mutations` 1080、在飞任务 0。
+- 结构落库形态：列名是 **snake_case**（`channel_models.protocol_release`、`tasks.protocol_binding_json`、`route_attempts.protocol_binding_json`），不是 Go 字段名 `ProtocolRelease`；索引 `idx_channel_models_protocol_release` 在场；109 不回填，`channel_models`(76 行)／`tasks`(3699 行) 的相关列全为 NULL 属预期（首轮读数脚本按 PascalCase 查列名曾把这三列误判成「不存在」，已按实际列名改脚本）。
+- 上线实锤：`/api/health/ready` 报 `build.version=v1.8.7.1`（go1.25.14）、`schema` 全对象 `current=expected=9001` ＋ `yingceCurrent=yingceExpected=4`、`activeWorkerTasks=0`、checks 三项 true；二进制 94,290,552 → **94,380,120 B（＋89,568）**，宿主机 node `Buffer` 带边界命中 `v1.8.7.1` 1 次、旧版串 0 次；web 入口换成 **`index-BPjybb5K.js`**（4061 B），镜像内 `index.html` md5 `ed80800d9b7af612adec3219147d6c80` 与 `http://127.0.0.1:1888/index.html` 回读**逐字节相同**，卷内 assets 累计 4522 只（历史版本保留、上一版 `index-BU3F-_25.js` 仍在），新包 `canvas-image-presets-BqPKsJHC.js`／`list-search-input-C2oDkP4l.js` 均 200。
+- 路由探针：`GET /api/health/ready` 200、`/api/auth/settings` 200；`/api/admin/settings/provider-egress`／`/api/admin/settings/wechat`／`/api/user/profile`／`/api/models`／`/api/canvas/projects`／`/api/tasks`／`/api/resources`／`/api/billing/overview`／`/api/official-assets`／`/api/creation-conversations`／`/api/payments/orders`／`/api/agent/skills/usage` 全 **401**。**本批上游没有新增 HTTP 路由**（`git diff 63f113c4 882a1d1a -- backend` 里 `.GET/POST/PUT/PATCH/DELETE("` 的新增行只有 2 处且都不是路由注册），所以「新功能路由探针」这一项本轮不适用。
+- 日志：上线后 6 分钟 backend 25 行、web 36 行，`ERROR|FATAL|panic` 与 5xx 命中 **0**。
+- 仍未做／待验（未验就留空）：
+  - [ ] 可灵 4.0／Flash 官方视频插件真实出图，以及后台按插件版本配置生成模式／画幅／分辨率／时长并在保存前预览创作端选项
+  - [ ] 万相 Wan 3、xAI 视频协议改版后的真实调用
+  - [ ] 任务恢复：新建系统渠道任务锁定插件版本、查询走原协议与上游任务 ID；Agent 遇「上游是否受理尚不明确」时不再自动重发
+  - [ ] 图片节点从角色四视图／多机位九宫格预设创建草稿；视频节点复刻草稿确认后生成；背板新建与改色、目标节点在左侧时的连线弯折
+  - [ ] 短剧仅用现有段按顺序合成（缺段跳过、沿用旧版段提示、不重新生成）
+  - [ ] 工作台统一列表搜索与分页、账号菜单与移动端助手入口；Windows 原生部署调用 ffmpeg／ffprobe 不弹终端
+  - [ ] `bun scripts/verify-before-push.mjs` 全量（本机无可用 bun，仍由 CI 兜底）与真实浏览器验收；`backend:pi-runtime` 门禁依赖仍未装未跑
+  - [ ] 推送后看上游 CI 对 `plugin-packages/kling-v4-official` 新包的校验结果
+
 ## 合并上游 v1.8.7 之后 3 个前端提交（2026-11-19 深夜，LAN 栈，仅重建 web）
 
 - 上游在 v1.8.7 之后又推进 `8580004f..e5a7671b` 共 **3 提交**（末号 `e5a7671b`，`2026-11-19 20:37:05 +0800`）：`3602201c`（Agent 输入框模型选择器按面板宽度渐进收纳文案，`web/src/components/model-picker.tsx` 新增 `adaptiveTrigger` 与 `triggerLabelParts`，收纳样式走 `web/src/components/canvas/canvas-cloud-agent.css` 的容器查询）、`367846d0`（灵感详情图片与内容布局，修背板、文件夹拖动带出输入框）、`e5a7671b`（创作首页按提示词内容自动展开输入区，`web/src/pages/create/creation-workspace.tsx` 用 `clampCreationPromptHeight` 把 `48..300` 夹住）。变更面 **7 只文件、+254/−108**，全部在 `web/src`（pages 4 只、components 3 只）。
