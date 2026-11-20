@@ -85,6 +85,7 @@ test("Midjourney protocol defaults expose only supported controls and one submis
         ["cangyuan-midjourney-v82", "midjourney-2k", "2k", 1, true, 32000, 15],
         ["cangyuan-midjourney-v82", "", "1k", 1, true, 32000, 15],
         ["cangyuan-midjourney-v82-web", "Midjourney-v8.2", "1k", 8, false, 1024, 15],
+        ["cangyuan-midjourney-mj2", "mj2-midjourney", "1k", 5, false, 32000, 10],
     ] as const) {
         const image = defaultModelCapabilityConfig(protocol, model).image!;
         assert.equal(image.references.maxImages, maxImages);

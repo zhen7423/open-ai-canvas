@@ -4,10 +4,11 @@
 
 - V7：https://ai.cangyuansuanli.cn/docs/models/midjourney-v7
 - V8.2 / 1K / 2K：https://ai.cangyuansuanli.cn/docs/models/midjourney-1k
-- 模型清单以渠道 `GET /v1/models` 为准：`midjourney-v7`、`midjourney-1k`、`midjourney-2k`、`Midjourney-v8.2`。
-- 插件 ID `cangyuan-midjourney`；Provider ID `cangyuan-midjourney-v7`、`cangyuan-midjourney-v82`、`cangyuan-midjourney-v82-web`。
+- MJ2：https://ai.cangyuansuanli.cn/docs/models/mj2-midjourney
+- 模型清单以渠道 `GET /v1/models` 为准：`midjourney-v7`、`midjourney-1k`、`midjourney-2k`、`Midjourney-v8.2`、`mj2-midjourney`。
+- 插件 ID `cangyuan-midjourney`；Provider ID `cangyuan-midjourney-v7`、`cangyuan-midjourney-v82`、`cangyuan-midjourney-v82-web`、`cangyuan-midjourney-mj2`。
 - 配置 `apiKey`（secret、必填），由宿主渠道配置提供；鉴权 `Authorization: Bearer <TOKEN>`。
-- 创建 `POST /v1/images/generations`；源图编辑 `POST /v1/images/edits`。V8.2 官网线路只用 generations。
+- 创建 `POST /v1/images/generations`；源图编辑 `POST /v1/images/edits`。V8.2 官网线路与 MJ2 线路只用 generations。
 - 查询 `GET /v1/images/generations/{task_id}`；编辑查询 `GET /v1/images/edits/{task_id}`。
 - 默认同步等待（`async=false`）；保留任务 ID、查询路径以及 pending/completed/failed 的响应解析。
 - 不声明取消或单独结果下载端点，供应商未提供相应合同。
@@ -16,21 +17,22 @@
 
 | 参数 | 映射与约束 |
 | --- | --- |
-| `model` | 三条线路分别校验公开模型名，不自动换模型。V8.2 官网线路不区分大小写校验 `Midjourney-v8.2`，出站按官网写法发送。 |
-| `prompt` | 原样传递；V7 最多 4000 字符，V8.2 官网线路最多 1024 个字符。1K/2K 可在提示词写 `--v 8.2`，省略版本时由供应商默认 V8.2。 |
-| `images` | 依据宿主 role 排序，映射为 HTTPS URL 字符串数组；不能发 data URI 或本地文件。V7 最多 5 张，拒绝蒙版；V8.2 官网线路最多 8 张，同样拒绝蒙版。 |
-| `imageCount` | 只能为 1 或未设置；V7 与 1K/2K 上游固定 `n=1`，V8.2 官网线路不发送 `n`。返回多张不截断。 |
-| `aspectRatio` | 传 `size`；空值或 auto 不发送。V7 支持 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9 及对应宽x高；默认 16:9。1K/2K 支持 1:2 / 6:11 / 9:16 / 2:3 / 3:4 / 4:5 / 5:6 / 1:1 及其反向比例。V8.2 官网线路只写比例，不写宽x高。 |
+| `model` | 四条线路分别校验公开模型名，不自动换模型。V8.2 官网线路不区分大小写校验 `Midjourney-v8.2`，出站按官网写法发送；MJ2 只认 `mj2-midjourney`。 |
+| `prompt` | 原样传递；V7 最多 4000 字符，V8.2 官网线路最多 1024 个字符。1K/2K 可在提示词写 `--v 8.2`，省略版本时由供应商默认 V8.2。MJ2 按供应商要求把版本和风格写在提示词末尾（如 `--v 6.1 --style raw`），插件不额外截断。 |
+| `images` | 依据宿主 role 排序，映射为 HTTPS URL 字符串数组；不能发 data URI 或本地文件。V7 最多 5 张，拒绝蒙版；V8.2 官网线路最多 8 张，同样拒绝蒙版；MJ2 最多 5 张，同样拒绝蒙版。 |
+| `imageCount` | 只能为 1 或未设置；V7 与 1K/2K 上游固定 `n=1`，V8.2 官网线路不发送 `n`，MJ2 固定 `n=1`。返回多张不截断。 |
+| `aspectRatio` | 传 `size`；空值或 auto 不发送。V7 支持 1:1 / 16:9 / 9:16 / 4:3 / 3:4 / 3:2 / 2:3 / 5:4 / 4:5 / 21:9 及对应宽x高；默认 16:9。1K/2K 支持 1:2 / 6:11 / 9:16 / 2:3 / 3:4 / 4:5 / 5:6 / 1:1 及其反向比例。V8.2 官网线路只写比例，不写宽x高。MJ2 支持 1:1 / 3:2 / 2:3 / 4:3 / 3:4 / 5:4 / 4:5 / 16:9 / 9:16 / 21:9 及宽x高。 |
 | `providerOptions` | 仅 1K/2K 使用 `cangyuan-midjourney-v82.speed`（relax / fast）和 `reference`（image / style / edit / moodboard / editor）。不把速度映射为 quality。 |
 | `providerOptions`（V8.2 官网线路） | 使用 `cangyuan-midjourney-v82-web` 命名空间：`weird`（整数，插件声明 0–3000，渠道可收窄）、`hd`（布尔）、`reference_slots`（与参考图同序、逗号分隔的 `content` / `style`）。三者未设置时都不发送。 |
+| `providerOptions`（MJ2 线路） | 不使用插件命名空间；该线路只发送 `model`、`prompt`、`n`、`size`、`images`，供应商未提供速度、质量或参考图用途扩展字段。 |
 
 `reference=editor` 或宿主显式 `edit_source` 默认走 edits，必须只有一张源图；`reference=edit` 走 generations，最多四张图。mask role 单独映射为 `mask` HTTPS URL，仅 editor 可用。style/moodboard 等含义由调用方显式指定，插件不猜测风格用途。speed 不指定时不发送，沿用供应商默认或 prompt 中的 --fast/--relax；两者同时指定时须一致。
 
 V8.2 官网线路不区分参考与编辑：参考图一律进 `images`，端点固定 generations。参考图超过 4 张时必须填 `reference_slots`，逐项 `content` 或 `style`，条数须与参考图数一致；出站前逐项去空格并转小写，`hd` 关闭需显式选择（缺省即供应商的开启档）。`weird` 是 V8.2 相对 V8.1 新增项，插件不预设默认值。
 
-V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resolution、background、output_format、mask。1K/2K 不发送 quality、resolution、aspect_ratio、background、output_format，不支持 b64_json；不要写 --turbo，1K 不写 --hd。
+V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resolution、background、output_format、mask。1K/2K 不发送 quality、resolution、aspect_ratio、background、output_format，不支持 b64_json；不要写 --turbo，1K 不写 --hd。MJ2 只发送 model、prompt、n、size、images，不发送 quality、resolution、speed、background、output_format、mask 或 `providerOptions`；参考图与文生图共用 generations，没有 edits 分支。
 
-三条线路均固定 `response_format=url`、`async=false`。请求完整字段、校验表达式与动态端点见下方 Manifest，未列出的字段不透传。
+四条线路均固定 `response_format=url`、`async=false`。请求完整字段、校验表达式与动态端点见下方 Manifest，未列出的字段不透传。
 
 ## 响应、保存和错误
 
@@ -56,9 +58,9 @@ V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resol
   "apiVersion": "yingce.plugin/v2",
   "id": "cangyuan-midjourney",
   "name": "沧元 Midjourney",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "沧元算力 / 影绘",
-  "description": "独立适配 V7、默认 V8.2 的 1K/2K 线路与 V8.2 官网模型名线路，按供应商合同创建、查询并提取全部图片。",
+  "description": "独立适配 V7、默认 V8.2 的 1K/2K 线路、V8.2 官网模型名线路与 MJ2 线路，按供应商合同创建、查询并提取全部图片。",
   "enabled": true,
   "installable": true,
   "permissions": [
@@ -2003,6 +2005,333 @@ V7 不支持 --v、--niji、--fast、--hd，且不发送 speed、quality、resol
             "hd": {
               "$omitEmpty": {
                 "$ref": "request.providerOptions.cangyuan-midjourney-v82-web.hd"
+              }
+            },
+            "response_format": "url",
+            "async": false
+          }
+        },
+        "poll": {
+          "method": "GET",
+          "path": "/v1/images/generations/{{taskId}}"
+        },
+        "response": {
+          "taskIdPaths": [
+            "id",
+            "task_id"
+          ],
+          "statusPaths": [
+            "status"
+          ],
+          "errorPaths": [
+            "error.code"
+          ],
+          "messagePaths": [
+            "error.message",
+            "message"
+          ],
+          "images": {
+            "$map": {
+              "from": {
+                "$ref": "response.data"
+              },
+              "as": "item",
+              "in": {
+                "url": {
+                  "$ref": "item.url"
+                }
+              }
+            }
+          },
+          "usage": {
+            "$ref": "response.usage"
+          }
+        }
+      },
+      {
+        "id": "cangyuan-midjourney-mj2",
+        "label": "沧元 Midjourney MJ2",
+        "capabilities": [
+          "image"
+        ],
+        "scopes": [
+          "admin.system-channel",
+          "user.custom-channel",
+          "canvas",
+          "creation",
+          "agent"
+        ],
+        "baseUrl": "https://ai.cangyuansuanli.cn/v1",
+        "requiresPublicMediaUrls": true,
+        "auth": {
+          "type": "bearer",
+          "field": "apiKey"
+        },
+        "imageParameters": [
+          {
+            "name": "size",
+            "label": "画幅 / 尺寸",
+            "type": "string",
+            "binding": "aspectRatio"
+          },
+          {
+            "name": "count",
+            "label": "生成数量",
+            "type": "integer",
+            "binding": "imageCount",
+            "min": 1,
+            "max": 1,
+            "step": 1,
+            "default": 1
+          }
+        ],
+        "parameters": [
+          {
+            "name": "model",
+            "type": "string",
+            "required": true,
+            "mapping": "model",
+            "description": "供应商公开模型名 mj2-midjourney；本线路只认这一个模型名，不自动换模型。"
+          },
+          {
+            "name": "prompt",
+            "type": "string",
+            "required": true,
+            "mapping": "prompt",
+            "description": "原样传递；版本和风格按供应商要求写在提示词末尾，例如 --v 6.1 --style raw。"
+          },
+          {
+            "name": "images",
+            "type": "media[]",
+            "mapping": "images[]",
+            "description": "参考图按宿主顺序转为 HTTPS URL 数组；最多 5 张，不接受蒙版。"
+          },
+          {
+            "name": "imageCount",
+            "type": "integer",
+            "mapping": "n=1",
+            "description": "一次提交只能为 1；按次计费，结果里返回的多张图片全部保存。"
+          },
+          {
+            "name": "aspectRatio",
+            "type": "string",
+            "mapping": "size",
+            "description": "比例或宽x高；空值和 auto 不发送，沿用供应商默认构图。"
+          }
+        ],
+        "validations": [
+          {
+            "assert": {
+              "$in": [
+                {
+                  "$ref": "request.model"
+                },
+                [
+                  "mj2-midjourney"
+                ]
+              ]
+            },
+            "message": "模型名与 Midjourney MJ2 线路不匹配。"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$ref": "request.imageCount"
+                },
+                1
+              ]
+            },
+            "message": "Midjourney MJ2 一次提交 n 只能为 1；返回多张图片会全部保存。"
+          },
+          {
+            "assert": {
+              "$gt": [
+                {
+                  "$len": {
+                    "$trim": {
+                      "$ref": "request.prompt"
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "Midjourney MJ2 提示词不能为空。"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$ne": [
+                          {
+                            "$first": {
+                              "$split": [
+                                {
+                                  "$ref": "media.value"
+                                },
+                                ":"
+                              ]
+                            }
+                          },
+                          "https"
+                        ]
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "Midjourney MJ2 参考图必须是 HTTPS URL，不能发送本地文件或 data URI。"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$ne": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "mask"
+                        ]
+                      }
+                    }
+                  }
+                },
+                5
+              ]
+            },
+            "message": "Midjourney MJ2 参考图最多 5 张。"
+          },
+          {
+            "assert": {
+              "$eq": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$ref": "request.images"
+                      },
+                      "as": "media",
+                      "where": {
+                        "$eq": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          "mask"
+                        ]
+                      }
+                    }
+                  }
+                },
+                0
+              ]
+            },
+            "message": "Midjourney MJ2 线路不支持蒙版。"
+          }
+        ],
+        "create": {
+          "method": "POST",
+          "path": "/v1/images/generations",
+          "contentType": "application/json",
+          "body": {
+            "model": {
+              "$ref": "request.model"
+            },
+            "prompt": {
+              "$ref": "request.prompt"
+            },
+            "n": 1,
+            "size": {
+              "$if": {
+                "condition": {
+                  "$in": [
+                    {
+                      "$lower": {
+                        "$trim": {
+                          "$ref": "request.aspectRatio"
+                        }
+                      }
+                    },
+                    [
+                      "",
+                      "auto"
+                    ]
+                  ]
+                },
+                "then": null,
+                "else": {
+                  "$ref": "request.aspectRatio"
+                }
+              }
+            },
+            "images": {
+              "$if": {
+                "condition": {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$ne": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "mask"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                "then": {
+                  "$map": {
+                    "from": {
+                      "$sortByOrder": {
+                        "$filter": {
+                          "from": {
+                            "$ref": "request.images"
+                          },
+                          "as": "media",
+                          "where": {
+                            "$ne": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              "mask"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "as": "media",
+                    "in": {
+                      "$ref": "media.value"
+                    }
+                  }
+                },
+                "else": null
               }
             },
             "response_format": "url",

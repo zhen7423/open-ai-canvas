@@ -128,6 +128,41 @@ func TestCangyuanMidjourneyV82WebLineSendsOfficialContract(t *testing.T) {
 	}
 }
 
+func TestCangyuanMidjourneyMJ2RequestAndPolling(t *testing.T) {
+	adapter := cangyuanAdapter(t, "cangyuan-midjourney-mj2")
+	// 按次计费线路：只发 model、prompt、n、size、images，质量、分辨率、速度、蒙版都不参与。
+	request := GenerationRequest{Model: "mj2-midjourney", Prompt: "雨夜霓虹街景 --v 6.1 --style raw", ImageCount: 1, AspectRatio: "auto", Quality: "high", Resolution: "2k", Extra: map[string]any{"transparentBackground": "true"}}
+	spec, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := manifestTestBody(t, spec)
+	if spec.Path != "/v1/images/generations" || body["model"] != "mj2-midjourney" || body["n"] != float64(1) || body["response_format"] != "url" || body["async"] != false {
+		t.Fatalf("create = %#v, body = %#v", spec, body)
+	}
+	for _, key := range []string{"size", "images", "quality", "resolution", "background", "speed", "output_format", "mask", "reference_slots", "hd", "weird"} {
+		if _, ok := body[key]; ok {
+			t.Fatalf("unsupported field %s was emitted: %#v", key, body)
+		}
+	}
+	// 参考图仍走 generations（没有 edits 分支），按宿主顺序进入 images。
+	request.AspectRatio = "3:2"
+	request.Images = []MediaReference{{URL: "https://example.com/second.png", Role: "edit_source", Order: 2}, {URL: "https://example.com/first.png", Role: "edit_source", Order: 1}}
+	spec, err = adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = manifestTestBody(t, spec)
+	images, _ := body["images"].([]any)
+	if spec.Path != "/v1/images/generations" || body["size"] != "3:2" || len(images) != 2 || images[0] != "https://example.com/first.png" {
+		t.Fatalf("reference create = %#v, body = %#v", spec, body)
+	}
+	poll, err := adapter.BuildPoll(context.Background(), PollContext{Request: request, TaskID: "task-42"})
+	if err != nil || poll.Path != "/v1/images/generations/task-42" {
+		t.Fatalf("poll = %#v, err = %v", poll, err)
+	}
+}
+
 func TestCangyuanMidjourneyRejectsInvalidInputs(t *testing.T) {
 	webOptions := func(value string) map[string]map[string]any {
 		return map[string]map[string]any{"cangyuan-midjourney-v82-web": {"reference_slots": value}}
@@ -158,6 +193,12 @@ func TestCangyuanMidjourneyRejectsInvalidInputs(t *testing.T) {
 		{"web slots required above four", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(5)}},
 		{"web slots count mismatch", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(2), ProviderOptions: webOptions("content")}},
 		{"web slots unknown value", "cangyuan-midjourney-v82-web", GenerationRequest{Model: "Midjourney-v8.2", Prompt: "portrait", Images: webImages(2), ProviderOptions: webOptions("content,moodboard")}},
+		{"mj2 line rejects v7 model", "cangyuan-midjourney-mj2", GenerationRequest{Model: "midjourney-v7", Prompt: "portrait"}},
+		{"mj2 empty prompt", "cangyuan-midjourney-mj2", GenerationRequest{Model: "mj2-midjourney", Prompt: "   "}},
+		{"mj2 multiple submissions", "cangyuan-midjourney-mj2", GenerationRequest{Model: "mj2-midjourney", Prompt: "portrait", ImageCount: 2}},
+		{"mj2 data URI", "cangyuan-midjourney-mj2", GenerationRequest{Model: "mj2-midjourney", Prompt: "portrait", Images: []MediaReference{{DataURL: "data:image/png;base64,aA=="}}}},
+		{"mj2 mask", "cangyuan-midjourney-mj2", GenerationRequest{Model: "mj2-midjourney", Prompt: "portrait", Images: []MediaReference{{URL: "https://example.com/mask.png", Role: "mask"}}}},
+		{"mj2 over five references", "cangyuan-midjourney-mj2", GenerationRequest{Model: "mj2-midjourney", Prompt: "portrait", Images: webImages(6)}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := cangyuanAdapter(t, tc.provider).BuildCreate(context.Background(), RequestContext{Request: tc.request}); err == nil {
@@ -168,7 +209,7 @@ func TestCangyuanMidjourneyRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestCangyuanMidjourneyPreservesAllResultsAndTaskStates(t *testing.T) {
-	for _, provider := range []string{"cangyuan-midjourney-v7", "cangyuan-midjourney-v82", "cangyuan-midjourney-v82-web"} {
+	for _, provider := range []string{"cangyuan-midjourney-v7", "cangyuan-midjourney-v82", "cangyuan-midjourney-v82-web", "cangyuan-midjourney-mj2"} {
 		adapter := cangyuanAdapter(t, provider)
 		for _, payload := range []string{`{"data":[{"url":"https://example.com/1.png"},{"url":"https://example.com/2.png"},{"url":"https://example.com/3.png"},{"url":"https://example.com/4.png"}]}`, `{"id":"task-42","status":"completed","data":[{"url":"https://example.com/1.png"},{"url":"https://example.com/2.png"},{"url":"https://example.com/3.png"},{"url":"https://example.com/4.png"}]}`} {
 			result, err := adapter.ParseCreate(context.Background(), []byte(payload))
